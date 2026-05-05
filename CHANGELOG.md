@@ -2,6 +2,123 @@
 
 All notable changes to the Visa Slot Tracker.
 
+## [4.2.0] — 2026-05-05
+
+**US tracker expansion + internationalization.** v4.1.0 implemented US wait-time tracking for 5 Indian consulates; v4.2.0 extends the same processor to 30 third-country US consulates (the "interview at third country" workaround that Indian applicants use when domestic queues are years long). Plus comprehensive non-Indian-user documentation.
+
+### Added
+
+- **30 third-country US consulate entries** in `centers.json`. State.gov publishes wait-time data for every US consulate worldwide; the v4.1.0 `USStateDeptProcessor` was already country-agnostic, just needed entries:
+  - **Mexico (10 consulates)** — Ciudad Juárez, Guadalajara, Hermosillo, Matamoros, Mérida, Mexico City, Monterrey, Nogales, Nuevo Laredo, Tijuana. Most popular third-country workaround.
+  - **Canada (7 consulates)** — Ottawa, Toronto, Calgary, Halifax, Montreal, Quebec City, Vancouver. TCN restrictions tightened post-2023; still useful for trend tracking.
+  - **UAE (2)** — Abu Dhabi, Dubai. Indian expats in Gulf.
+  - **Saudi Arabia (2)** — Riyadh, Jeddah.
+  - **Singapore, Thailand (2), UK, France, Germany (3), Australia, Japan** — for Indians on those countries' visas.
+
+  All entries default to `enabled: false` — opt-in via `select-countries` to avoid producing noise for users who don't need them.
+
+- **Accent-handling in consulate name matching** — `_consulate_name_variants()` method on `USStateDeptProcessor`. State.gov inconsistently uses accented (`Mérida`, `Ciudad Juárez`) and ASCII forms (`Merida`, `Ciudad Juarez`). The variant generator handles both automatically using `unicodedata.normalize` + a curated list of common alternative forms.
+
+- **`INTERNATIONALIZATION_GUIDE.md`** — comprehensive new doc for non-Indian users. Worked examples for 4 origin/destination combinations (Bangladesh→US, UK→Schengen, Pakistan→Canada, US citizen→other countries). VFS URL country code reference table for 25+ origin countries. Schema rename guide for `indian_cities` → `application_cities`. Multi-region setup patterns. Honest notes on what's adaptable vs what needs code changes.
+
+- **`_third_country_interview_legend`** field at top of `centers.json` documenting the TCN workaround pattern for Indian applicants stuck in long US queues.
+
+### Changed
+
+- **Schengen documentation in ADDING_COUNTRIES.md** — clarified that Schengen monitoring is via the existing VFS layer (already production-validated for Czech Republic May 2026), NOT via a separate wait-time tracker. There is no equivalent of state.gov for Schengen — each member country handles wait times differently. A unified Schengen wait-time tracker isn't built and shouldn't be.
+
+- **README.md** — restructured to highlight v4.2.0 (third-country US, internationalization) at top, kept v4.1.0 (US India consulates) and v4.0.0 (tier system, Telegram, GitHub Actions) sections below. Updated total counts (110+ centers, 45+ destinations).
+
+- **Header docstrings updated** — `visa_tracker_v3.py`, `smoke_test.py` docstrings, and `centers.json` notes now reflect v4.2.0. `USER_GUIDE.md` and `QUICKSTART.md` headers updated to reflect "current version: v4.2.0" instead of "v4.0.0".
+
+- **Selftest version label** updated `v4.1.0` → `v4.2.0`. Smoke test EXPECTED_VERSION updated.
+
+### Comprehensive stale reference audit
+
+Performed a systematic sweep across all documentation files for outdated version references. Classified each reference as:
+
+- **Stale** (updated): document headers tracking the current overall version
+- **Historical** (kept): refs documenting when a specific feature was introduced (e.g., "v3.2.2 added the delta classifier" stays correct forever)
+
+Files updated for v4.2.0 cosmetic version bumps: `USER_GUIDE.md`, `QUICKSTART.md`, `README.md`, `visa_tracker_v3.py` header docstring, `smoke_test.py` docstring, `centers.json` version field + notes.
+
+Files preserved at their feature-introduction version (correct as-is): `TIER_SYSTEM.md` (v4.0.0), `TELEGRAM_SETUP.md` (v4.0.0), `GITHUB_ACTIONS.md` (v4.0.0), `VISA_FREE_GUIDE.md` (v4.0.0), `US_VISA_GUIDE.md` (v4.1.0). These document specific features at the version where they shipped — that's intentional, not stale.
+
+### Migration from v4.1.0
+
+Drop-in. Existing `visa_slots.db` and `config.json` work unchanged. The 30 new US consulate entries are pre-disabled — you'll see them in `coverage` output but they don't run unless you opt in:
+
+```powershell
+# Pick the third-country US consulates you want to monitor
+python visa_tracker_v3.py select-countries
+# In custom mode, scroll to the United States section — entries are listed
+# per consulate so you can pick "Ciudad Juárez", "Tijuana", "Dubai" individually
+```
+
+For non-Indian users adopting v4.2.0 fresh: see `INTERNATIONALIZATION_GUIDE.md`. About 30 minutes to set up for a typical non-Indian origin.
+
+### Notes for v4.2.0 users
+
+- US wait-time tracking remains **beta**. The state.gov page format hasn't changed during v4.1.0 testing, but it's regex-based parsing — if State Department redesigns the page, the parser breaks gracefully (returns no data, no false alerts) but you'd silently lose US monitoring until the regex is updated.
+- Third-country US consulates are particularly variable. State.gov sometimes shows "Closed" or "Interview Waiver" for consulates not currently accepting TCN appointments. The transition-detection logic catches these but treat with skepticism.
+- For real-time US slot detection, the only legal/practical path remains: log into your CGI Federal account directly. This tracker complements that, doesn't replace it.
+
+---
+
+## [4.1.0] — 2026-05-05
+
+**US visa wait-time tracker.** First non-VFS, non-Selenium processor in the codebase. Plus stale-reference cleanup that the user spotted (the `"version": "3.2.4"` example block in `ADDING_COUNTRIES.md` had survived from when the file was first written for v3.2.4).
+
+### Added
+
+- **`USStateDeptProcessor` class** — new processor for monitoring US visa wait times via two public, unauthenticated data sources:
+  - Primary: `travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html` (US Department of State, monthly updates, authoritative)
+  - Fallback: `ais.usvisa-info.com/en-in/niv/information/visa_wait_times` (CGI Federal public page, more frequent updates, less authoritative)
+
+  Pure HTTP, no Selenium, no JWT, no captcha. Detects significant drops in wait time (≥10% relative or ≥20 absolute days) which strongly correlate with new appointment slot batches being released by US consulates. Wait time history persisted in the existing `slots` table via metadata JSON column (no schema migration needed).
+
+- **5 new US consulate entries** in `centers.json`: Mumbai, New Delhi, Chennai, Hyderabad, Kolkata. Each tracks 5 visa categories: B1/B2 (visitor), F/M/J (student/exchange), H/L/O/P/Q (work/petition-based), C1/D (crew/transit), Other Nonimmigrant. Default tier `cold` (90 min polling — appropriate given underlying data updates monthly).
+
+- **`us_state_dept` processor metadata** in `centers.json` processors dict. Complements (does not replace) the existing `cgi_federal` entry which remains correctly disabled with documented account-lock risk warnings.
+
+- **`US_VISA_GUIDE.md`** — comprehensive new documentation explaining what the US tracker does and does NOT do. Sets honest expectations: trend tracker, not real-time slot scraper. Latency is days to weeks (state.gov updates monthly), not minutes like VFS. Documents why direct CGI Federal slot scraping is intentionally out of scope (account-lock risk, ToS questions, credential handling concerns).
+
+- **README.md US section** highlighting v4.1.0 with explicit honest caveat that this is not real-time scraping.
+
+### Changed
+
+- **`UnifiedChecker.check()` dispatch** — added a new branch at the top that routes `processor=us_state_dept` to `USStateDeptProcessor.check()` BEFORE the VFS/JWT layers. US doesn't need calibration, doesn't burn the Selenium budget. All existing VFS/BLS/TLS/embassy_direct dispatch unchanged.
+
+- **`SETUP_GUIDE.md` header** — was titled "v3.2.2 — Production Setup Guide" since the v3.2.2 release. Rewritten with current-version framing while preserving the v3.2.x technical content as historical record (nothing about the original v3.2.2 architecture has changed; just no longer the "current" version).
+
+- **`PROCESSORS.md` header** — bumped from "(v3.2.1)" to "current as of v4.1.0". Added US visas section.
+
+- **`ADDING_COUNTRIES.md`** — fixed the user-spotted bug: example block showed `"version": "3.2.4"` because the file was first written during v3.2.4 work and the embedded JSON example never got updated when the schema bumped to v4.0/v4.1. Now correctly shows v4.0.0 in the example with the `tier` field included.
+
+- **Selftest version label** updated `v4.0.0` → `v4.1.0`. Smoke test EXPECTED_VERSION updated.
+
+### Migration from v4.0.0
+
+Drop-in. Existing `visa_slots.db` and `config.json` work unchanged. To start tracking US wait times:
+
+```powershell
+python visa_tracker_v3.py select-countries
+# Pick: 'all' or 'americas' (or 'custom' and select United States)
+python visa_tracker_v3.py run --tiered
+```
+
+US dispatch is automatic — no flag needed.
+
+### Validated against real production traffic (cumulative, all v3.2.x + v4.0)
+
+- 22+ hours of continuous monitoring across 9 cycles, 290 city-checks per cycle
+- 1,972 page-change events processed, 100% correctly classified (4 real positives, 1,968 noise events suppressed)
+- Czech Republic appointment slots detected at 05:01 IST May 5, 2026 (delta=2126c, all 4 cities), externally verified by direct VFS portal screenshot
+
+US processor has not yet been validated against real production traffic — it ships with the architecture proven via smoke test (10/10 selftest passes including the new dispatch path), but real-world drift behavior will only be observable after weeks of monitoring real state.gov updates. Treat v4.1.0 US support as **beta** — works as designed, but the regex-based parser of state.gov HTML may need tuning if State Department changes the page format.
+
+---
+
 ## [4.0.0] — 2026-05-05
 
 **Major feature release.** The detection and notification core from v3.2.x is preserved verbatim — validated against real production traffic for 22+ hours, caught real Czech Republic slots May 5, 2026, suppressed 1,968 false positives. Six new workstreams layered on top.

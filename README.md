@@ -1,25 +1,40 @@
 # Visa Slot Tracker
 
-Personal automation that watches India-outbound visa appointment websites and notifies you the moment a slot opens up. Built for Indian travellers chasing UK Skilled Worker, Canada Express Entry, Schengen, and other competitive visa corridors where slots disappear in minutes.
+Personal automation that watches visa appointment websites and notifies you the moment a slot opens up. Built primarily for Indian travellers chasing UK Skilled Worker, Canada Express Entry, Schengen, US, and other competitive visa corridors — but the architecture is **passport-agnostic** and can be adapted for any origin country (see [INTERNATIONALIZATION_GUIDE.md](INTERNATIONALIZATION_GUIDE.md)).
 
-**Version:** v4.0.0
+**Version:** v4.2.0
 **Status:** production-validated against real VFS Global traffic (22+ hours, 1,972 page-change events, 4 confirmed real slot detections in Czech Republic May 2026)
 **Platform:** Windows 10/11 (primary), macOS/Linux (secondary), GitHub Actions (cloud)
 
 ## What it does
 
-- Monitors **64 visa application centres** across **42 destination countries** every 10–90 minutes
-- Detects new appointment slots via three layers (VFS JWT API replay, anonymous API discovery, page-change classifier)
+- Monitors **110+ visa application centres** across **45+ destination countries**, including 5 Indian US consulates and 30 third-country US consulates (Mexico, Canada, UAE, Saudi Arabia, etc.)
+- Detects new appointment slots via three layers (VFS JWT API replay, anonymous API discovery, page-change classifier) for VFS countries
+- Detects significant wait-time drops at US consulates worldwide (state.gov + CGI Federal public data)
 - Notifies via **desktop toast + Telegram + email + Discord** (all configurable)
 - Suppresses 100% of cosmetic noise that crashed v3.2.0 (validated across 1,968 false-positive events)
 - Runs on your laptop or in **GitHub Actions** for 24/7 cloud monitoring
 
-## What's new in v4.0.0
+## What's new in v4.2.0
+
+**Third-country US consulate tracking** — extended `USStateDeptProcessor` to 30 US consulates worldwide where Indians (or anyone) might pursue the "third-country interview" workaround when domestic queues are years long. Mexico (10 consulates), Canada (7), UAE/Saudi Arabia (4), plus Singapore, Thailand, UK, France, Germany, Australia, Japan. All disabled by default — opt in via `select-countries`.
+
+**Internationalization** — new [INTERNATIONALIZATION_GUIDE.md](INTERNATIONALIZATION_GUIDE.md) showing how non-Indian users (Bangladesh, Pakistan, UK residents, etc.) can adapt the schema and URL patterns. Worked examples for 4 origin/destination combinations, country code reference table, and honest notes on what's adaptable vs what needs code changes.
+
+**Schengen documentation** — clarified the architecture for Schengen monitoring. The VFS layer (already implemented and production-validated) IS the right mechanism. There is no equivalent of state.gov for Schengen, so a unified Schengen wait-time tracker isn't built — and shouldn't be. Set Schengen countries to `tier: warm` for 30-min polling.
+
+**Stale reference cleanup** — comprehensive sweep of all version references across docs.
+
+## What was new in v4.1.0
+
+🇺🇸 **US visa wait-time tracker** — first non-VFS, non-Selenium processor. Monitors official US Department of State + CGI Federal public pages. Detects significant drops in wait time which strongly correlate with new appointment slot batches being released. Honest caveat: trend tracker, not real-time slot scraper. Latency is days to weeks (state.gov updates monthly), not minutes like VFS. Direct slot scraping at CGI Federal requires DS-160 + login and is intentionally NOT implemented (account-lock risk). See [`US_VISA_GUIDE.md`](US_VISA_GUIDE.md) for full scope.
+
+## What was new in v4.0.0
 
 - **Tier system** — promote priority countries to a 10-min polling interval; let the long tail stay at 90 min
 - **Telegram setup wizard** — `setup-telegram` CLI auto-detects your chat ID and sends a test message in 60 seconds
 - **GitHub Actions deployment** — three workflows for cloud monitoring, weekly recalibration, daily healthcheck
-- **Country selection** — pick what to monitor instead of scaffolding all 82 centres
+- **Country selection** — pick what to monitor instead of scaffolding all centres
 - **Visa-free cleanup** — 12 destinations (Sri Lanka, Thailand, Malaysia, etc.) flagged and disabled by default
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
@@ -60,13 +75,15 @@ For non-technical step-by-step, see [USER_GUIDE.md](USER_GUIDE.md).
 |---|---|---|
 | [USER_GUIDE.md](USER_GUIDE.md) | Non-developers | Plain-English setup walkthrough, troubleshooting |
 | [QUICKSTART.md](QUICKSTART.md) | Developers | CLI reference, common operations |
-| [TIER_SYSTEM.md](TIER_SYSTEM.md) | Anyone using v4.0 | How hot/warm/cold tiers work, tuning advice |
+| [TIER_SYSTEM.md](TIER_SYSTEM.md) | Anyone using v4.0+ | How hot/warm/cold tiers work, tuning advice |
 | [TELEGRAM_SETUP.md](TELEGRAM_SETUP.md) | Anyone wanting phone alerts | Bot creation, env vars, group chats |
 | [GITHUB_ACTIONS.md](GITHUB_ACTIONS.md) | Cloud deployers | 24/7 monitoring on free tier, cost analysis |
+| [US_VISA_GUIDE.md](US_VISA_GUIDE.md) | US visa applicants | What v4.1.0+ US tracking does and doesn't do, honest scope |
+| [INTERNATIONALIZATION_GUIDE.md](INTERNATIONALIZATION_GUIDE.md) | Non-Indian users | Adapt the repo for any origin country (Bangladesh, UK, Pakistan, etc.) |
 | [ADDING_COUNTRIES.md](ADDING_COUNTRIES.md) | Anyone expanding coverage | Schema reference, embassy URL table for ~30 destinations |
 | [VISA_FREE_GUIDE.md](VISA_FREE_GUIDE.md) | Curious about disabled entries | Why Sri Lanka is flagged off, how to re-enable |
 | [SETUP_GUIDE.md](SETUP_GUIDE.md) | Architecture deep-dive | 3-layer detection, JWT replay, calibration internals |
-| [PROCESSORS.md](PROCESSORS.md) | Developers extending support | VFS / BLS / TLS / embassy_direct implementation notes |
+| [PROCESSORS.md](PROCESSORS.md) | Developers extending support | VFS / BLS / TLS / embassy_direct / us_state_dept implementation notes |
 | [CHANGELOG.md](CHANGELOG.md) | Anyone | Release history with reasoning |
 
 ## Architecture (at 30,000 ft)

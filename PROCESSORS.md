@@ -1,6 +1,8 @@
-# Indian Visa Processor Landscape — May 2026 (v3.2.1)
+# Indian Visa Processor Landscape — May 2026 (current as of v4.1.0)
 
 This document explains who actually processes visa applications for Indians traveling abroad. The tracker's `centers.json` registry codifies all of this; this doc explains the *why* so you can decide what to enable, what to leave disabled, and what's outside the tracker's reach.
+
+> **v4.1.0 added:** New `us_state_dept` processor for US visa wait-time tracking (state.gov + CGI Federal public pages). See "US visas" section below.
 
 > **v3.2.1 corrections to v3.2:** Portugal moved BLS → VFS Global (Embassy of Portugal mandates VFS). Algeria, Tunisia, Mozambique moved BLS → embassy_direct (no online portal exists for any of the three; v3.2 had pattern-generated `india.bls{country}visa.com` URLs that don't resolve). See the misclassification audit at the bottom.
 

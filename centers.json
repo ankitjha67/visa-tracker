@@ -1,8 +1,8 @@
 {
-  "version": "4.0.0",
+  "version": "4.2.0",
   "schema": "centers-registry",
   "generated_at": "2026-05-03",
-  "notes": "India-outbound visa application centers, indexed by (destination_country x processor). v4.0.0 release: added _indian_passport_status flags to 7 visa-free and 5 e-visa destinations (marked enabled=false but kept in file with metadata). Added default 'tier' field to all centers (default 'cold'). Use 'set-tier' CLI to promote priorities to hot/warm. v3.2.4 release: no structural changes; version bump for consistency. v3.2.3 release: consolidates v3.2.2a-d hotfixes (Windows UTF-8 stdout, HEAD->GET preflight, BOM-tolerant config loader, win32 desktop toast path). v3.2.2 added noise-marker schema, rate-limited notifications, delta page-change classifier, selector-phase 5x speedup, JWT circuit breaker. v3.2.1 corrected four misclassified processors (Portugal moved BLS->VFS, Algeria/Tunisia/Mozambique BLS->embassy_direct).",
+  "notes": "India-outbound visa application centers, indexed by (destination_country x processor). v4.2.0 release: extended us_state_dept processor to 30 third-country US consulates (Mexico 10, Canada 7, UAE 2, Saudi 2, plus Singapore/Thailand/UK/France/Germany/Australia/Japan). Added accent-handling for non-ASCII consulate names. New INTERNATIONALIZATION_GUIDE.md for non-Indian users. Schengen documentation enhanced (no Schengen wait-time tracker — VFS layer is the right mechanism, validated for Czech Republic May 2026). v4.1.0 release: added 5 US consulate entries (Mumbai, New Delhi, Chennai, Hyderabad, Kolkata) using new us_state_dept processor for wait-time tracking via state.gov + CGI Federal public pages. v4.0.0 release: added _indian_passport_status flags to 7 visa-free and 5 e-visa destinations, default 'tier' field on all centers, tier system (hot/warm/cold). v3.2.4 release: no structural changes; version bump for consistency. v3.2.3 release: consolidates v3.2.2a-d hotfixes. v3.2.2 added noise-marker schema, rate-limited notifications, delta classifier. v3.2.1 corrected four misclassified processors.",
   "processors": {
     "vfs_global": {
       "name": "VFS Global",
@@ -76,6 +76,19 @@
       "wait_strategy": "load_complete",
       "url_template": "https://indianvisaonline.gov.in/",
       "notes": "Government of India eVisa portal — for foreign nationals applying TO India. Inverse direction from the rest of this registry."
+    },
+    "us_state_dept": {
+      "name": "US Department of State + CGI Federal (wait-time tracker)",
+      "homepage": "https://travel.state.gov/",
+      "url_template": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "appointment_path": "",
+      "type": "classic_web",
+      "wait_strategy": "instant",
+      "auth_required": false,
+      "captcha": "none",
+      "auth_method": "none",
+      "default_enabled": true,
+      "notes": "v4.1.0 — Complementary to cgi_federal entry. Tracks official wait-time data for US consulates from travel.state.gov (monthly updates) + ais.usvisa-info.com/en-in/niv/information/visa_wait_times (more frequent). Pure HTTP, no Selenium, no captcha. Detects significant drops which correlate with new appointment slots being released. Latency: days to weeks (not minutes like VFS). NOT a real-time slot scraper — direct slot scraping at CGI Federal requires DS-160 + paid receipt + login and is intentionally NOT implemented (account-lock risk). See US_VISA_GUIDE.md for context on usage."
     }
   },
   "indian_cities": {
@@ -2193,6 +2206,999 @@
       "_status_note": "E-visa via evisatraveller.mfa.ir, instant approval",
       "_status_alternative_url": "see _status_note for the actual e-visa portal",
       "tier": "cold"
+    },
+    {
+      "id": "us_state_mumbai",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": true,
+      "_consulate_note": "Mumbai consulate (CGI Federal IND-MUM)",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-in/niv/users/sign_in (requires DS-160 + paid receipt + login)",
+      "_data_source_note": "Wait-time tracker only. v4.1.0 USStateDeptProcessor monitors state.gov + CGI Federal public pages. See US_VISA_GUIDE.md for context on what this can and can't do."
+    },
+    {
+      "id": "us_state_delhi",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": true,
+      "_consulate_note": "New Delhi embassy (CGI Federal IND-NDL)",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-in/niv/users/sign_in (requires DS-160 + paid receipt + login)",
+      "_data_source_note": "Wait-time tracker only. v4.1.0 USStateDeptProcessor monitors state.gov + CGI Federal public pages. See US_VISA_GUIDE.md for context on what this can and can't do."
+    },
+    {
+      "id": "us_state_chennai",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Chennai"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": true,
+      "_consulate_note": "Chennai consulate (CGI Federal IND-CHE)",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-in/niv/users/sign_in (requires DS-160 + paid receipt + login)",
+      "_data_source_note": "Wait-time tracker only. v4.1.0 USStateDeptProcessor monitors state.gov + CGI Federal public pages. See US_VISA_GUIDE.md for context on what this can and can't do."
+    },
+    {
+      "id": "us_state_hyderabad",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Hyderabad"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": true,
+      "_consulate_note": "Hyderabad consulate (CGI Federal IND-HYD)",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-in/niv/users/sign_in (requires DS-160 + paid receipt + login)",
+      "_data_source_note": "Wait-time tracker only. v4.1.0 USStateDeptProcessor monitors state.gov + CGI Federal public pages. See US_VISA_GUIDE.md for context on what this can and can't do."
+    },
+    {
+      "id": "us_state_kolkata",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Kolkata"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": true,
+      "_consulate_note": "Kolkata consulate (CGI Federal IND-KOL)",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-in/niv/users/sign_in (requires DS-160 + paid receipt + login)",
+      "_data_source_note": "Wait-time tracker only. v4.1.0 USStateDeptProcessor monitors state.gov + CGI Federal public pages. See US_VISA_GUIDE.md for context on what this can and can't do."
+    },
+    {
+      "id": "us_mx_ciudad_juarez",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Ciudad Juárez"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Mexico",
+      "_consulate_country_iso2": "mx",
+      "_consulate_country_iso3": "mex",
+      "_consulate_note": "Most popular Mexican post for Indian TCNs (when accepting). Border crossing from El Paso TX.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-mx/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_mx_guadalajara",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Guadalajara"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Mexico",
+      "_consulate_country_iso2": "mx",
+      "_consulate_country_iso3": "mex",
+      "_consulate_note": "Mexico's 2nd largest city. TCN-friendly historically.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-mx/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_mx_hermosillo",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Hermosillo"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Mexico",
+      "_consulate_country_iso2": "mx",
+      "_consulate_country_iso3": "mex",
+      "_consulate_note": "Northern Mexico, easier border access from US.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-mx/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_mx_matamoros",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Matamoros"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Mexico",
+      "_consulate_country_iso2": "mx",
+      "_consulate_country_iso3": "mex",
+      "_consulate_note": "Border city across from Brownsville TX.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-mx/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_mx_merida",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Mérida"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Mexico",
+      "_consulate_country_iso2": "mx",
+      "_consulate_country_iso3": "mex",
+      "_consulate_note": "Yucatán peninsula. Vacation+visa combo possible.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-mx/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_mx_mexico_city",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Mexico City"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Mexico",
+      "_consulate_country_iso2": "mx",
+      "_consulate_country_iso3": "mex",
+      "_consulate_note": "Largest US embassy in Mexico. Often heaviest queue.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-mx/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_mx_monterrey",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Monterrey"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Mexico",
+      "_consulate_country_iso2": "mx",
+      "_consulate_country_iso3": "mex",
+      "_consulate_note": "Industrial hub, frequent business travel.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-mx/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_mx_nogales",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Nogales"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Mexico",
+      "_consulate_country_iso2": "mx",
+      "_consulate_country_iso3": "mex",
+      "_consulate_note": "Border post, low volume.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-mx/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_mx_nuevo_laredo",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Nuevo Laredo"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Mexico",
+      "_consulate_country_iso2": "mx",
+      "_consulate_country_iso3": "mex",
+      "_consulate_note": "Border post across from Laredo TX.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-mx/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_mx_tijuana",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Tijuana"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Mexico",
+      "_consulate_country_iso2": "mx",
+      "_consulate_country_iso3": "mex",
+      "_consulate_note": "Border post across from San Diego CA. High TCN volume.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-mx/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_ca_ottawa",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Ottawa"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Canada",
+      "_consulate_country_iso2": "ca",
+      "_consulate_country_iso3": "can",
+      "_consulate_note": "US embassy. TCN restrictions tightened post-2023.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-ca/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_ca_toronto",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Toronto"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Canada",
+      "_consulate_country_iso2": "ca",
+      "_consulate_country_iso3": "can",
+      "_consulate_note": "Largest Canadian city. Heavy queue.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-ca/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_ca_calgary",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Calgary"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Canada",
+      "_consulate_country_iso2": "ca",
+      "_consulate_country_iso3": "can",
+      "_consulate_note": "Western Canada US consulate.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-ca/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_ca_halifax",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Halifax"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Canada",
+      "_consulate_country_iso2": "ca",
+      "_consulate_country_iso3": "can",
+      "_consulate_note": "Atlantic Canada US consulate, lower volume.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-ca/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_ca_montreal",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Montreal"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Canada",
+      "_consulate_country_iso2": "ca",
+      "_consulate_country_iso3": "can",
+      "_consulate_note": "Quebec province US consulate.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-ca/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_ca_quebec",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Quebec City"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Canada",
+      "_consulate_country_iso2": "ca",
+      "_consulate_country_iso3": "can",
+      "_consulate_note": "Quebec City US consulate, smaller post.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-ca/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_ca_vancouver",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Vancouver"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Canada",
+      "_consulate_country_iso2": "ca",
+      "_consulate_country_iso3": "can",
+      "_consulate_note": "Pacific NW US consulate. Active for Asia-bound TCNs.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-ca/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_ae_abu_dhabi",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Abu Dhabi"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "United Arab Emirates",
+      "_consulate_country_iso2": "ae",
+      "_consulate_country_iso3": "are",
+      "_consulate_note": "UAE capital US embassy. Useful for Indian residents in UAE.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-ae/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_ae_dubai",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Dubai"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "United Arab Emirates",
+      "_consulate_country_iso2": "ae",
+      "_consulate_country_iso3": "are",
+      "_consulate_note": "Largest US consulate in Gulf for Indian expats.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-ae/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_sa_riyadh",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Riyadh"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Saudi Arabia",
+      "_consulate_country_iso2": "sa",
+      "_consulate_country_iso3": "sau",
+      "_consulate_note": "Saudi capital US embassy.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-sa/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_sa_jeddah",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Jeddah"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Saudi Arabia",
+      "_consulate_country_iso2": "sa",
+      "_consulate_country_iso3": "sau",
+      "_consulate_note": "Western Saudi US consulate.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-sa/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_sg_singapore",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Singapore"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Singapore",
+      "_consulate_country_iso2": "sg",
+      "_consulate_country_iso3": "sgp",
+      "_consulate_note": "Single US embassy. Indian tech/finance professionals living in SG.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-sg/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_th_bangkok",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Bangkok"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Thailand",
+      "_consulate_country_iso2": "th",
+      "_consulate_country_iso3": "tha",
+      "_consulate_note": "Thai capital US embassy. Often used during Thai vacation.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-th/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_th_chiang_mai",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Chiang Mai"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Thailand",
+      "_consulate_country_iso2": "th",
+      "_consulate_country_iso3": "tha",
+      "_consulate_note": "Northern Thailand US consulate, smaller volume.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-th/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_gb_london",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "London"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "United Kingdom",
+      "_consulate_country_iso2": "gb",
+      "_consulate_country_iso3": "gbr",
+      "_consulate_note": "US embassy London. Indians on UK student/work visas.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-gb/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_fr_paris",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Paris"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "France",
+      "_consulate_country_iso2": "fr",
+      "_consulate_country_iso3": "fra",
+      "_consulate_note": "US embassy Paris. Indians on French long-stay visas.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-fr/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_de_frankfurt",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Frankfurt"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Germany",
+      "_consulate_country_iso2": "de",
+      "_consulate_country_iso3": "deu",
+      "_consulate_note": "Largest US consulate in Germany. Indian expats in DE.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-de/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_de_berlin",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Berlin"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Germany",
+      "_consulate_country_iso2": "de",
+      "_consulate_country_iso3": "deu",
+      "_consulate_note": "US embassy Berlin.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-de/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_de_munich",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Munich"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Germany",
+      "_consulate_country_iso2": "de",
+      "_consulate_country_iso3": "deu",
+      "_consulate_note": "Bavarian US consulate.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-de/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_au_sydney",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Sydney"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Australia",
+      "_consulate_country_iso2": "au",
+      "_consulate_country_iso3": "aus",
+      "_consulate_note": "Largest US consulate in AU. Indian skilled migrants.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-au/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
+    },
+    {
+      "id": "us_jp_tokyo",
+      "destination_country": "United States",
+      "destination_iso2": "us",
+      "destination_iso3": "usa",
+      "processor": "us_state_dept",
+      "appointment_url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html",
+      "indian_cities": [
+        "Tokyo"
+      ],
+      "visa_types": [
+        "Visitor (B1/B2)",
+        "Student/Exchange Visitor (F, M, J)",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "Crew/Transit (C1/D)",
+        "Other Nonimmigrant Visas"
+      ],
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold",
+      "enabled": false,
+      "_consulate_country": "Japan",
+      "_consulate_country_iso2": "jp",
+      "_consulate_country_iso3": "jpn",
+      "_consulate_note": "US embassy Tokyo. Indian engineers/researchers in JP.",
+      "_actual_booking_url": "https://ais.usvisa-info.com/en-jp/niv/users/sign_in (your CGI Federal account)",
+      "_data_source_note": "Third-country US visa appointment via state.gov wait-time tracker. Most posts limit TCN (third-country national) appointments — confirm eligibility before relying on this. See US_VISA_GUIDE.md."
     }
   ],
   "_indian_passport_status_legend": {
@@ -2200,5 +3206,6 @@
     "evisa": "E-visa with instant or near-instant approval. No appointment slot to monitor. See _status_note for the actual application URL.",
     "appointment_required": "Standard visa requiring an appointment at a VFS / BLS / consulate slot. Monitor normally.",
     "null_or_missing": "Default; treat as appointment_required."
-  }
+  },
+  "_third_country_interview_legend": "v4.2.0 — Some Indian US visa applicants pursue interviews at non-Indian US consulates when domestic queues exceed 1+ year. This is called the 'third-country national' (TCN) workaround. Most Mexican consulates accept TCNs when not overbooked. Canadian consulates restricted TCN post-2023 but still useful for trend tracking. Gulf consulates (UAE, Saudi) are useful for Indians on Gulf work visas. All entries are DISABLED by default — opt in via `select-countries` if relevant."
 }

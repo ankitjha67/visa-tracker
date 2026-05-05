@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 r"""
-Visa Slot Tracker v3.2.4 — Smoke Test
+Visa Slot Tracker v4.2.0 — Smoke Test
 =====================================
 
 Verifies a fresh install end-to-end across 7 stages. Designed to be invoked
@@ -30,7 +30,7 @@ CYAN  = "\033[96m"
 GRAY  = "\033[90m"
 RESET = "\033[0m"
 
-EXPECTED_VERSION = "4.0.0"
+EXPECTED_VERSION = "4.2.0"
 
 def color(text, c):
     return f"{c}{text}{RESET}"

@@ -1,4 +1,4 @@
-# User Guide — Visa Slot Tracker v4.0.0
+# User Guide — Visa Slot Tracker (current version: v4.2.0)
 
 This guide is for **non-technical users**. No coding background required. If you can install software and follow recipes, you can run this tool.
 

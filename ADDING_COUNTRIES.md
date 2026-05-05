@@ -28,7 +28,7 @@ Open `centers.json` and you'll see the structure:
 
 ```json
 {
-  "version": "3.2.4",
+  "version": "4.0.0",
   "schema": "centers-registry",
   "processors": [...],          // List of processors (VFS, BLS, TLS, etc.)
   "indian_cities": [...],       // Default list of Indian cities to monitor
@@ -44,6 +44,7 @@ Open `centers.json` and you'll see the structure:
       "visa_types": ["Visitor", "Business", "Student", "Work", "Family"],
       "priority": "high",
       "confidence": "medium",
+      "tier": "cold",
       "enabled": true
     },
     ...
@@ -228,6 +229,79 @@ For countries that don't use VFS but have a direct booking URL on their consulat
 
 ---
 
+## Schengen monitoring — read this before getting clever
+
+Schengen is the most-asked-about destination group. A few realities to know:
+
+**The current architecture handles Schengen well.** 17 of 27 Schengen members are already in `centers.json` via VFS Global (France, Germany, Italy, Netherlands, Switzerland, Austria, Belgium, Sweden, Norway, Denmark, Finland, Greece, Czech Republic, Hungary, Poland, Croatia, Bulgaria) and Portugal moved BLS→VFS in v3.2.1. All use the existing `vfs_global` processor with three-layer detection.
+
+**Real Schengen detection has been validated.** The Czech Republic slot detection at 05:01 IST May 5, 2026 — across all 4 cities (Mumbai, Delhi, Bengaluru, Chennai) — used exactly this VFS layer. The page-change classifier caught the slot opening, fired notifications, and was externally verified via direct VFS portal screenshot.
+
+**There is NO equivalent of state.gov for Schengen.** Each Schengen member publishes wait-time data differently (or not at all). France publishes some on consulate websites, Germany sometimes via Auswärtiges Amt, Italy mostly doesn't. A unified "Schengen wait-time tracker" would need 17 different parsers, each fragile.
+
+**Recommendation:** use the existing VFS layer. Set Schengen countries to `tier: warm` for 30-min polling — fast enough to catch real slot openings, gentle enough to not get rate-limited.
+
+```powershell
+python visa_tracker_v3.py set-tier --preset schengen --tier warm
+python visa_tracker_v3.py run --tiered
+```
+
+**What you should NOT do:** build a Schengen consulate scraper unless (a) you have a specific consulate website with structured data, AND (b) you commit to maintaining the parser when the consulate redesigns. The maintenance cost outweighs the benefit for most users.
+
+### Schengen members and their processors
+
+| Country | Processor | URL pattern | Status |
+|---|---|---|---|
+| France | vfs_global | `/ind/en/fra/` | ✓ Active |
+| Germany | vfs_global | `/ind/en/deu/` | ✓ Active |
+| Italy | vfs_global | `/ind/en/ita/` | ✓ Active |
+| Netherlands | vfs_global | `/ind/en/nld/` | ✓ Active |
+| Switzerland | vfs_global | `/ind/en/che/` | ✓ Active |
+| Austria | vfs_global | `/ind/en/aut/` | ✓ Active |
+| Belgium | vfs_global | `/ind/en/bel/` | ✓ Active |
+| Sweden | vfs_global | `/ind/en/swe/` | ✓ Active |
+| Norway | vfs_global | `/ind/en/nor/` | ✓ Active |
+| Denmark | vfs_global | `/ind/en/dnk/` | ✓ Active |
+| Finland | vfs_global | `/ind/en/fin/` | ✓ Active |
+| Greece | vfs_global | `/ind/en/grc/` | ✓ Active |
+| Czech Republic | vfs_global | `/ind/en/cze/` | ✓ Active (validated) |
+| Hungary | vfs_global | `/ind/en/hun/` | ✓ Active |
+| Poland | vfs_global | `/ind/en/pol/` | ✓ Active |
+| Croatia | vfs_global | `/ind/en/hrv/` | ✓ Active |
+| Bulgaria | vfs_global | `/ind/en/bgr/` | ✓ Active |
+| Portugal | vfs_global | `/ind/en/prt/` | ✓ Active (corrected v3.2.1 from BLS) |
+| Spain | bls_international | (BLS portal) | ⚠ Lower confidence (BLS calibration is harder) |
+| Slovenia | not in registry | — | Add manually if needed (VFS likely) |
+| Slovakia | not in registry | — | Add manually if needed (TLS Contact, requires custom processor) |
+| Romania | not in registry | — | Add manually if needed (joined Schengen Mar 2024) |
+| Lithuania, Latvia, Estonia, Iceland, Malta, Luxembourg, Liechtenstein | not in registry | — | Smaller volume; add if relevant |
+
+For destinations not in the registry: see Scenario 2 (VFS) or Scenario 3 (embassy direct) above.
+
+---
+
+## Adapting for non-Indian origins
+
+If you're not Indian and want to track visas from a different origin country, **see [INTERNATIONALIZATION_GUIDE.md](INTERNATIONALIZATION_GUIDE.md)**. Brief overview:
+
+The architecture is passport-agnostic. The schema in `centers.json` defaults to Indian VFS URLs (`/ind/en/...`) and Indian application cities, but nothing in the detection pipeline assumes India.
+
+To adapt:
+1. Replace VFS URL prefixes: `/ind/en/<dest>/` → `/<your_iso3>/en/<dest>/`
+2. Update the `indian_cities` field with your local application cities (the field name is legacy; treat it as "application cities")
+3. Optionally: rename `indian_cities` to `application_cities` schema-wide (find/replace)
+4. Update `_indian_passport_status` flags if you care about visa-free skipping (or just ignore them — they're disabled-by-default and won't actively harm a non-Indian)
+
+For US visa monitoring: zero changes needed. The `us_state_dept` processor is country-agnostic. State.gov publishes for every US consulate worldwide.
+
+For new origin → destination pairs not on VFS: same schema, different `processor` and `appointment_url`. See Scenario 3.
+
+The full guide has worked examples for Bangladesh→US, UK→Schengen, Pakistan→Canada, and US citizen → other countries.
+
+---
+
+
+
 ## Embassy / portal reference table
 
 Common visa portals for India outbound. Use this when adding a country.
@@ -330,7 +404,7 @@ After editing `centers.json`, before restarting the tracker:
 python -c "import json; d=json.load(open('centers.json',encoding='utf-8-sig')); print('OK,', d['version'], len(d['centers']), 'centers')"
 ```
 
-Should print: `OK, 3.2.4 N centers` where N is your new count. If you see a JSON error, find and fix it (most common: missing comma, extra comma, mismatched quotes).
+Should print: `OK, 4.1.0 N centers` where N is your new count. If you see a JSON error, find and fix it (most common: missing comma, extra comma, mismatched quotes).
 
 ### 2. Verify URLs are reachable
 

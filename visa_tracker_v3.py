@@ -1,65 +1,78 @@
 #!/usr/bin/env python3
 """
-Visa Slot Tracker v4.0.0 — Tiered scheduling, Telegram, GitHub Actions
+Visa Slot Tracker v4.2.0 — Third-country US consulates + internationalization
 
-v4.0.0 is a significant feature release. The detection and notification core
-from v3.2.x is preserved verbatim (validated against real production traffic
-for 22+ hours, caught real Czech Republic slots May 5, 2026). v4.0 adds:
+v4.2.0 expansions:
+  • Extended USStateDeptProcessor to 30+ US consulates worldwide (Mexico,
+    Canada, UAE, Saudi Arabia, Singapore, Thailand, UK). State.gov publishes
+    wait times for every US consulate globally; the processor was already
+    country-agnostic, just needed centers.json entries. High-value for the
+    "third-country interview" workaround pattern Indians use when domestic
+    US queues are years long — Mexico (9 consulates) is the most popular
+    workaround, Canada (7) less so post-2023 policy changes, UAE (2) and
+    Saudi Arabia (2) for Indians on Gulf work visas.
+  • Accent-handling in consulate name matching (e.g. "Ciudad Juárez" vs
+    "Ciudad Juarez", "Mérida" vs "Merida"). State.gov uses accented forms
+    on some pages, ASCII on others.
+  • New INTERNATIONALIZATION_GUIDE.md for non-Indian users. Documents how
+    to adapt the repo for tracking visas from any origin country, with
+    worked examples (Bangladesh→US, UK→Schengen, Pakistan→Canada). The
+    schema was always passport-agnostic; just needed proper docs.
+  • Schengen documentation enhanced in ADDING_COUNTRIES.md. Honest framing:
+    Schengen unified wait-time tracking IS NOT possible because there is
+    no equivalent state.gov-style data source — each Schengen member
+    handles wait times differently. The existing VFS layer (validated for
+    Schengen via real Czech Republic detections May 2026) IS the right
+    mechanism. Documented per-country specifics for all 17 Schengen members.
+  • Stale reference cleanup pass — every doc header updated to reflect
+    current version.
 
-  • Tier system. Each center has a `tier` field (`hot` / `warm` / `cold`).
-    The new run loop is a priority-queue scheduler instead of a fixed-cycle
-    loop: targets are rescheduled at tier-specific intervals after each
-    check. Hot countries (immigration priorities like UK, Germany, Ireland,
-    Singapore, Canada) can be polled every 10 min while cold countries stay
-    at 90 min. Detection latency for hot targets drops from ~70 min average
-    to ~5 min average. No new processes, no concurrent Chrome instances —
-    same single-worker design, just smarter scheduling. Backward compat:
-    centers without a `tier` field default to `cold`, so v3.2.x configs
-    work unchanged.
+v4.1.0 — US visa wait-time tracker (Indian consulates)
 
-  • Country selection. New `select-countries` CLI command and a non-default
-    install flow that asks which countries to monitor instead of enabling
-    all 42. Presets: `immigration` (UK/Canada/DE/IE/SG), `schengen`,
-    `asia-pacific`, `gulf`, `all`, or `custom`. Reduces resource use and
-    Cloudflare exposure when you only care about specific corridors.
+v4.1.0 added the first non-VFS, non-Selenium processor: US Department of State
+wait-time monitoring. Initially Indian travelers could monitor 5 US consulates
+(Mumbai, Delhi, Chennai, Hyderabad, Kolkata) across 5 visa categories
+(B1/B2, F/M/J, H/L/O/P/Q, C1/D, Other) without needing DS-160 or auth.
 
-  • Telegram setup wizard. New `setup-telegram` CLI walks through bot
-    creation: validates your token via the Telegram Bot API, polls
-    /getUpdates to auto-detect your chat_id, sends a test message,
-    writes config.json. Five minutes of friction → 60 seconds. Also:
-    Telegram credentials can now come from TELEGRAM_BOT_TOKEN and
-    TELEGRAM_CHAT_ID environment variables (required for GitHub Actions).
+What's new in v4.1.0:
+  • USStateDeptProcessor (new class) — fetches official wait-time data from
+    travel.state.gov + ais.usvisa-info.com/en-in/niv/information/visa_wait_times.
+    Pure HTTP, no Selenium, no JWT, no captcha. Detects significant drops
+    in wait time which strongly correlate with new appointment slot batches
+    being released by US consulates.
+  • centers.json schema additions: 5 new US consulate entries with
+    processor='us_state_dept'. Bumped to v4.1.0.
+  • New documentation: US_VISA_GUIDE.md — explains scope (trend tracker, not
+    real-time slot scraper), limitations (state.gov updates monthly), and
+    how to use US alerts (race to ais.usvisa-info.com after auth).
+  • Stale documentation references (v3.2.4 example in ADDING_COUNTRIES.md,
+    v3.2.2 header in SETUP_GUIDE.md, v3.2.1 header in PROCESSORS.md)
+    updated to reflect current version.
 
-  • GitHub Actions deployment. Three workflow files in .github/workflows/:
-    monitor.yml (every 30 min cron), calibrate.yml (weekly), and
-    healthcheck.yml (daily alive ping). State persists via Actions cache.
-    Means the tracker runs 24/7 without your laptop being on. Comes with
-    a complete deployment guide in GITHUB_ACTIONS.md.
+What's preserved from v4.0.0 (no breaking changes):
+  • Tier system (hot/warm/cold polling, --tiered flag, set-tier CLI)
+  • Country selection (select-countries CLI with 6 presets)
+  • Telegram setup wizard (setup-telegram CLI)
+  • GitHub Actions deployment (3 workflow files)
+  • Visa-free / e-visa flagging (_indian_passport_status field)
+  • Telegram env var support (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+    NOTIFICATION_DRY_RUN)
 
-  • centers.json cleanup. Visa-free / e-visa destinations for Indian
-    passports (Sri Lanka, Thailand, Malaysia, Maldives, Bhutan, Nepal,
-    Indonesia, Mauritius, Hong Kong, etc.) are now flagged with
-    `_indian_passport_status` and set `enabled: false`. They remain in
-    the file with explanatory metadata so users with other passports can
-    re-enable them with one toggle. ~12% cycle time saved by skipping
-    countries that produce no useful signal.
-
-What's preserved verbatim from v3.2.4 (detection + notification pipeline):
+What's preserved from v3.2.x (no breaking changes):
   • Three-layer detection: VFS JWT replay, anonymous API, delta page-change
-  • Persistent-noise marker (consecutive=N, strict mode)
-  • Notification rate-limit (cap 25, summary on overflow)
-  • Selector-phase 5x speedup
+  • Persistent-noise marker, notification rate-limit, selector-phase 5x speedup
   • JWT circuit breaker
-  • windows-toasts desktop notifications (v3.2.3)
-  • UTF-8 BOM-tolerant config (v3.2.3)
-  • Streaming GET preflight (v3.2.3)
-  • All five v3.2.x CLI commands: selftest, verify-urls, calibrate, status,
+  • windows-toasts desktop notifications + PowerShell BalloonTip fallback
+  • UTF-8 BOM-tolerant config
+  • Streaming GET preflight
+  • All v3.2.x CLI commands: selftest, verify-urls, calibrate, status,
     coverage, run
 
-Migration from v3.2.4: drop in v4.0 files, your existing visa_slots.db works
-unchanged, your existing config.json works unchanged. To opt into the tier
-system, run `python visa_tracker_v3.py select-countries` and pick a preset
-or set tiers manually with `--set-tier`.
+Migration from v4.0.0: drop in v4.1 files, your existing visa_slots.db works
+unchanged, your existing config.json works unchanged. To start tracking US
+wait times: run select-countries and pick 'all' or 'americas' preset, then
+run as usual. US dispatch is automatic — UnifiedChecker routes us_state_dept
+processor to USStateDeptProcessor.
 
 Three-layer detection strategy:
   Layer 1: API Interception — Capture the XHR/fetch calls that frontends make
@@ -1814,6 +1827,410 @@ class VFSJWTSession:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  US VISA WAIT-TIME PROCESSOR (v4.1.0)
+#
+#  The US is a special case. Unlike VFS countries where slot calendars are
+#  visible (sometimes auth-gated, sometimes not), CGI Federal's appointment
+#  system at ais.usvisa-info.com requires DS-160 + paid receipt + login
+#  before showing any slot data. That's outside what a public tracker can do.
+#
+#  What we CAN do is monitor official wait-time data from two public sources:
+#
+#    1. travel.state.gov — Global Visa Wait Times. Updated MONTHLY by the
+#       US Department of State. Authoritative but slow. Useful for long-term
+#       trend signals: "Mumbai dropped from 437 to 219 days in June".
+#
+#    2. ais.usvisa-info.com/en-in/niv/information/visa_wait_times — CGI
+#       Federal's public wait times page (no auth needed). Updates more
+#       frequently (operational changes, new appointment releases). Less
+#       authoritative — sometimes lags state.gov, sometimes leads.
+#
+#  When the wait time DROPS significantly (e.g., from 400 days to 100 days)
+#  it's a strong signal that the consulate has released a batch of new
+#  appointments. Race to ais.usvisa-info.com (with your account/DS-160) to
+#  grab one.
+#
+#  This is a TREND tracker, not a real-time slot scraper. Latency is days
+#  to weeks, not minutes. See US_VISA_GUIDE.md for full context.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class USStateDeptProcessor:
+    """
+    Monitors US Department of State + CGI Federal public wait-time pages for
+    significant drops at the 5 Indian consulates: Mumbai, New Delhi, Chennai,
+    Hyderabad, Kolkata.
+
+    Architecture:
+      - Pure HTTP (requests). No Selenium, no JWT, no captcha bypass needed.
+      - Two data sources tried in order; whichever gives fresher data wins.
+      - Per-(consulate, visa_type) wait time stored in DB; alerts fire when
+        wait time decreases by ≥ALERT_DROP_THRESHOLD_PCT or transitions from
+        a non-numeric state ("Closed", "No appointments") to a numeric value.
+      - Conservative on alerting: state.gov updates monthly so most cycles
+        return no_change. That's by design.
+
+    Visa categories tracked (state.gov labels):
+      - Visitor (B1/B2 — business + tourism)
+      - Student/Exchange Visitor (F, J)
+      - Petition-Based Temporary Workers (H, L, O, P, Q)
+      - Crew/Transit (C1/D)
+      - Other Nonimmigrant Visa
+    """
+
+    STATE_GOV_URL = "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/global-visa-wait-times.html"
+    CGI_FEDERAL_URL = "https://ais.usvisa-info.com/en-in/niv/information/visa_wait_times"
+
+    # Alert when wait time drops by this % or more (10% = "Mumbai 400 → 360 days")
+    ALERT_DROP_THRESHOLD_PCT = 10.0
+    # Alert on absolute drop ≥ this many days even if % is below threshold
+    # (e.g., 50 → 30 days is only 40% but you'd want to know)
+    ALERT_ABSOLUTE_DROP_DAYS = 20
+
+    # Indian consulate codes — match the labels used on travel.state.gov
+    INDIAN_CONSULATES = ["Mumbai", "New Delhi", "Chennai", "Hyderabad", "Kolkata"]
+
+    # Map visa type labels to short codes for SlotInfo
+    VISA_TYPE_CODES = {
+        "Visitor (B1/B2)": "B1/B2",
+        "Visitors (B1/B2)": "B1/B2",
+        "Student/Exchange Visitor (F, M, J)": "F/M/J",
+        "Petition-Based Temporary Workers (H, L, O, P, Q)": "H/L/O/P/Q",
+        "Crew/Transit (C1/D)": "C1/D",
+        "Other Nonimmigrant Visas": "Other",
+    }
+
+    def __init__(self, db: 'Database'):
+        self.db = db
+        self.log = logging.getLogger("us_state_dept")
+
+    def check(self, country: str, city: str,
+              visa_types: list[str]) -> 'CheckResult':
+        """Run wait-time check for one US consulate. `city` is the consulate
+        name (Mumbai/New Delhi/Chennai/Hyderabad/Kolkata)."""
+        t0 = time.time()
+        slots: list[SlotInfo] = []
+
+        # Fetch both sources; either may fail on a given day. Use whichever
+        # works.
+        wait_data = self._fetch_wait_times(city)
+
+        if not wait_data:
+            return CheckResult(
+                country, city, "us_state_dept", "error", [],
+                error="Could not fetch wait time data from state.gov or CGI Federal",
+                method="us_wait_time",
+                duration_ms=int((time.time() - t0) * 1000),
+            )
+
+        # Compare each visa type against last known value
+        for visa_label, current_days in wait_data.items():
+            visa_code = self.VISA_TYPE_CODES.get(visa_label, visa_label[:20])
+
+            # Read previous value from DB. Use a stable key per (consulate, visa).
+            db_key = f"us_waittime|{city}|{visa_code}"
+            prev = self._get_previous(db_key)
+
+            # Always store current value for next cycle (whether or not it's an alert)
+            self._store_current(db_key, current_days)
+
+            if prev is None:
+                # First observation — no comparison possible. Log baseline.
+                self.log.info(f"  US/{city}/{visa_code}: baseline {current_days}")
+                continue
+
+            # Detect significant drop
+            alert = self._is_significant_drop(prev, current_days)
+            if alert:
+                # Build a SlotInfo representing the new (earlier) projected
+                # appointment date. Today + N days = projected available date.
+                today = datetime.now()
+                if isinstance(current_days, (int, float)) and current_days >= 0:
+                    proj_date = (today + timedelta(days=int(current_days))).strftime("%Y-%m-%d")
+                else:
+                    proj_date = "TBD"
+
+                slots.append(SlotInfo(
+                    country="United States",
+                    city=city,
+                    visa_type=visa_code,
+                    date=proj_date,
+                    detection_method="us_wait_time_drop",
+                    booking_url="https://ais.usvisa-info.com/en-in/niv/users/sign_in",
+                    confidence="medium",  # state.gov is authoritative but monthly latency
+                ))
+                self.log.info(
+                    f"  🇺🇸 US/{city}/{visa_code}: WAIT TIME DROP "
+                    f"{prev} → {current_days} days "
+                    f"(projected appointment: {proj_date})"
+                )
+
+        if slots:
+            return CheckResult(
+                country, city, "us_state_dept", "slots_found", slots,
+                method="us_wait_time",
+                duration_ms=int((time.time() - t0) * 1000),
+            )
+        return CheckResult(
+            country, city, "us_state_dept", "no_change", [],
+            method="us_wait_time",
+            duration_ms=int((time.time() - t0) * 1000),
+        )
+
+    def _fetch_wait_times(self, consulate: str) -> dict:
+        """Fetch wait times for a single Indian consulate.
+
+        Returns dict {visa_type_label: days_or_status_string} or empty dict
+        on failure. Tries state.gov first; falls back to CGI Federal.
+        """
+        # Try state.gov
+        try:
+            data = self._fetch_state_gov(consulate)
+            if data:
+                return data
+        except Exception as e:
+            self.log.debug(f"  state.gov fetch failed for {consulate}: {e}")
+
+        # Fallback to CGI Federal
+        try:
+            data = self._fetch_cgi_federal(consulate)
+            if data:
+                return data
+        except Exception as e:
+            self.log.debug(f"  CGI Federal fetch failed for {consulate}: {e}")
+
+        return {}
+
+    def _consulate_name_variants(self, name: str) -> list:
+        """Generate accent variants of a consulate name (Ciudad Juárez vs
+        Ciudad Juarez, Mérida vs Merida). State.gov uses both forms inconsistently.
+
+        v4.2.0: needed for non-India consulates (Mexico, etc.)
+        """
+        variants = [name]
+        # Strip accents to get an ASCII variant
+        import unicodedata
+        ascii_form = ''.join(
+            c for c in unicodedata.normalize('NFKD', name)
+            if not unicodedata.combining(c)
+        )
+        if ascii_form != name:
+            variants.append(ascii_form)
+
+        # Special cases — common alternative forms used by state.gov
+        special_cases = {
+            "New Delhi": ["New Delhi", "Delhi, India"],
+            "Mumbai": ["Mumbai"],
+            "Ciudad Juárez": ["Ciudad Juárez", "Ciudad Juarez", "Juarez"],
+            "Mérida": ["Mérida", "Merida"],
+            "Mexico City": ["Mexico City", "Mexico, D.F.", "Mexico DF"],
+            "Quebec City": ["Quebec City", "Quebec"],
+            "Montreal": ["Montreal", "Montréal"],
+            "Abu Dhabi": ["Abu Dhabi"],
+            "Dubai": ["Dubai"],
+            "Riyadh": ["Riyadh"],
+            "Jeddah": ["Jeddah", "Jiddah"],
+            "London": ["London", "London, England"],
+        }
+        if name in special_cases:
+            for v in special_cases[name]:
+                if v not in variants:
+                    variants.append(v)
+
+        return variants
+
+    def _fetch_state_gov(self, consulate: str) -> dict:
+        """Scrape state.gov wait times page for a specific consulate.
+
+        The page is server-rendered HTML (Drupal). Each consulate has a
+        section/row with visa type labels and numeric or status values.
+        """
+        try:
+            resp = requests.get(
+                self.STATE_GOV_URL,
+                timeout=15,
+                headers={
+                    "User-Agent": rand_ua(),
+                    "Accept": "text/html,application/xhtml+xml",
+                },
+            )
+            if resp.status_code != 200:
+                return {}
+        except requests.exceptions.RequestException as e:
+            self.log.debug(f"state.gov request failed: {e}")
+            return {}
+
+        html = resp.text
+
+        # state.gov uses a tabular structure. The exact format may evolve;
+        # we use a robust regex strategy:
+        # 1. Find the consulate name as text
+        # 2. Extract the next ~500 chars (one row's worth of data)
+        # 3. Look for numeric values or status keywords
+        result: dict = {}
+
+        # Look for the consulate's data row. Use accent-aware variants
+        # (v4.2.0 — handles Mexican/French/etc. consulate names)
+        consulate_variants = self._consulate_name_variants(consulate)
+
+        for variant in consulate_variants:
+            # Match the consulate name followed by data within ~1000 chars
+            pattern = re.compile(
+                re.escape(variant) + r'(.{0,1500})',
+                re.DOTALL | re.IGNORECASE,
+            )
+            match = pattern.search(html)
+            if not match:
+                continue
+
+            row_html = match.group(1)
+            # Extract visa categories and their values. Each visa label is
+            # followed by either a number (days) or a keyword.
+            for visa_label, code in self.VISA_TYPE_CODES.items():
+                # Look for visa label followed by number or keyword
+                value_pattern = re.compile(
+                    re.escape(visa_label) + r'.{0,200}?(\d{1,4})\s*(?:Calendar\s+)?(?:Days?)?',
+                    re.IGNORECASE | re.DOTALL,
+                )
+                value_match = value_pattern.search(row_html)
+                if value_match:
+                    try:
+                        days = int(value_match.group(1))
+                        # Sanity check — wait times shouldn't be over 1500 days
+                        if 0 <= days <= 1500:
+                            result[visa_label] = days
+                    except ValueError:
+                        pass
+            if result:
+                break  # Found data for this variant
+
+        return result
+
+    def _fetch_cgi_federal(self, consulate: str) -> dict:
+        """Fallback: scrape CGI Federal's public wait times page.
+
+        This page covers all Indian consulates on a single URL. Lighter weight
+        than state.gov but less authoritative.
+        """
+        try:
+            resp = requests.get(
+                self.CGI_FEDERAL_URL,
+                timeout=15,
+                headers={
+                    "User-Agent": rand_ua(),
+                    "Accept": "text/html,application/xhtml+xml",
+                },
+            )
+            if resp.status_code != 200:
+                return {}
+        except requests.exceptions.RequestException as e:
+            self.log.debug(f"CGI Federal request failed: {e}")
+            return {}
+
+        html = resp.text
+        result: dict = {}
+
+        # CGI Federal page has dropdown-selected consulate data. Without
+        # session state we can only see the rendered initial state which
+        # typically includes ALL India consulates. Parse similarly.
+        pattern = re.compile(
+            re.escape(consulate) + r'(.{0,1000})',
+            re.DOTALL | re.IGNORECASE,
+        )
+        match = pattern.search(html)
+        if not match:
+            return {}
+
+        row_html = match.group(1)
+        for visa_label, _code in self.VISA_TYPE_CODES.items():
+            value_pattern = re.compile(
+                re.escape(visa_label) + r'.{0,200}?(\d{1,4})\s*(?:Days?)?',
+                re.IGNORECASE | re.DOTALL,
+            )
+            value_match = value_pattern.search(row_html)
+            if value_match:
+                try:
+                    days = int(value_match.group(1))
+                    if 0 <= days <= 1500:
+                        result[visa_label] = days
+                except ValueError:
+                    pass
+
+        return result
+
+    def _is_significant_drop(self, prev, current) -> bool:
+        """Decide if the wait time change warrants an alert."""
+        # Both numeric: check % drop and absolute drop
+        if isinstance(prev, (int, float)) and isinstance(current, (int, float)):
+            if current >= prev:
+                return False  # No drop
+            drop = prev - current
+            if drop >= self.ALERT_ABSOLUTE_DROP_DAYS:
+                return True
+            pct = (drop / max(prev, 1)) * 100
+            return pct >= self.ALERT_DROP_THRESHOLD_PCT
+
+        # Transition from non-numeric (Closed, etc.) to numeric: alert
+        if not isinstance(prev, (int, float)) and isinstance(current, (int, float)):
+            return True
+
+        return False
+
+    def _get_previous(self, db_key: str):
+        """Read previous wait-time value from DB. Stored in slots.metadata."""
+        try:
+            con = sqlite3.connect(self.db.path)
+            cur = con.cursor()
+            cur.execute(
+                "SELECT metadata FROM slots WHERE id = ? ORDER BY found_at DESC LIMIT 1",
+                (db_key,),
+            )
+            row = cur.fetchone()
+            con.close()
+            if row and row[0]:
+                meta = json.loads(row[0])
+                val = meta.get("wait_days")
+                return val
+        except Exception as e:
+            self.log.debug(f"Could not read previous wait time: {e}")
+        return None
+
+    def _store_current(self, db_key: str, value):
+        """Persist current wait-time value for next cycle's comparison.
+
+        Reuses the slots table rather than adding a new schema. The metadata
+        JSON column is well-suited; we add a synthetic slot ID per
+        (consulate, visa_type).
+        """
+        try:
+            con = sqlite3.connect(self.db.path)
+            cur = con.cursor()
+            cur.execute("""
+                INSERT OR REPLACE INTO slots
+                (id, country, city, visa_type, date, time_slot,
+                 detection_method, booking_url, confidence, found_at,
+                 expires_at, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                db_key,
+                "United States",
+                db_key.split("|")[1] if "|" in db_key else "",
+                db_key.split("|")[2] if db_key.count("|") >= 2 else "",
+                "wait_time_baseline",
+                "",
+                "us_wait_time_baseline",
+                self.CGI_FEDERAL_URL,
+                "internal",
+                datetime.now().isoformat(),
+                (datetime.now() + timedelta(days=60)).isoformat(),
+                json.dumps({"wait_days": value}),
+            ))
+            con.commit()
+            con.close()
+        except Exception as e:
+            self.log.debug(f"Could not store wait time: {e}")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  UNIFIED CHECKER — Uses all three layers
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1835,6 +2252,7 @@ class UnifiedChecker:
         self.api_interceptor = APIInterceptor(browser_mgr, db)
         self.page_detector = PageChangeDetector(browser_mgr, db)
         self.vfs_jwt = VFSJWTSession(browser_mgr)  # v3.2.1
+        self.us_state_dept = USStateDeptProcessor(db)  # v4.1.0
         self.log = logging.getLogger("checker")
 
     def _confidence_for(self, calibration: Optional[dict],
@@ -1852,6 +2270,14 @@ class UnifiedChecker:
               visa_types: list[str]) -> CheckResult:
         """Run detection for one country/city combo."""
         t0 = time.time()
+
+        # ── v4.1.0: US visa wait-time path (no Selenium, no calibration) ──
+        # Dispatched BEFORE the VFS layer because US doesn't use VFS, doesn't
+        # need calibration, and shouldn't burn JWT/Selenium budget.
+        rec_for_proc = COUNTRY_INDEX.get((country or "").strip().lower(), {})
+        if rec_for_proc.get("processor") == "us_state_dept":
+            return self.us_state_dept.check(country, city, visa_types)
+
         url, portal_type = get_appointment_url(country)
 
         if not url:
@@ -3709,7 +4135,7 @@ def main():
                 print(f"  ✗ {name}  →  {str(e)[:200]}")
 
         print("\n" + "="*60)
-        print("  VISA TRACKER — SELFTEST (v4.0.0)")
+        print("  VISA TRACKER — SELFTEST (v4.2.0)")
         print("="*60)
 
         # 1. Registry loads
@@ -3898,7 +4324,7 @@ def main():
             print("="*60 + "\n")
             sys.exit(1)
         else:
-            print(f"\n  ✓ All checks passed — v4.0.0 is wired up correctly.")
+            print(f"\n  ✓ All checks passed — v4.2.0 is wired up correctly.")
             print(f"  Next: `python visa_tracker_v3.py verify-urls` then calibrate.")
             print("="*60 + "\n")
 

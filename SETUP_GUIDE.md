@@ -1,6 +1,22 @@
-# Visa Slot Tracker v3.2.2 — Production Setup Guide
+# Visa Slot Tracker — Architecture and Setup Guide
 
-> **What's new in v3.2.2 (production-blocking fixes from terminal-log audit):**
+This is the technical deep-dive. It documents the detection pipeline, calibration logic, and operational concerns that have evolved across versions. Most readers should start with `USER_GUIDE.md` (plain English) or `QUICKSTART.md` (CLI reference). Read this when you're debugging, extending, or curious about the *why*.
+
+> **What's current as of v4.1.0:**
+> - All v3.2.x detection and notification core preserved verbatim — validated against 22+ hours of real VFS Global traffic
+> - v4.0.0 added: tier system (hot/warm/cold polling), Telegram setup wizard, GitHub Actions deployment, country selection, visa-free flagging
+> - v4.1.0 added: US visa wait-time tracker (state.gov + CGI Federal public pages, 5 Indian consulates × 5 visa categories)
+> - See `CHANGELOG.md` for the full history with reasoning per release
+
+The sections below describe what was originally implemented in v3.2.2 and how it has held up through subsequent releases. **The architecture has not changed substantively since v3.2.2** — only the additions documented above and obvious bugfixes. The original v3.2.2 narrative is preserved below as historical record.
+
+---
+
+## Architecture history — v3.2.x (preserved verbatim, still current)
+
+The original v3.2.2 release fixed three failure modes from the v3.2 production run; all three fixes remain core to the current architecture:
+
+> **What was new in v3.2.2 (production-blocking fixes from terminal-log audit):**
 > - **Delta-based page-change classifier** — the v3.2 production run logged 200 page_changed events per cycle on stable VFS content (firing 866 fake slot notifications in 2 cycles). v3.2.2 computes the diff between previous and current page text and classifies only the new content, not the whole page. Integration test verified: zero false positives on stable noise; real slot openings still detected.
 > - **Persistent-noise marker** — a country firing page_changed in 2+ consecutive cycles gets flagged noisy in the DB; classifier threshold raised from 2→3 weak positives for that country until it goes clean. Auto-decay.
 > - **Notification rate-limit** — max 25 alerts per cycle. Overflow becomes a single summary "X events detected, see dashboard" alert. Stops the storm.

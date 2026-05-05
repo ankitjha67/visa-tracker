@@ -1,4 +1,4 @@
-# Quickstart — Visa Slot Tracker v4.0.0
+# Quickstart — Visa Slot Tracker (current: v4.2.0)
 
 Technical quick reference for developers. **For non-technical setup, read `USER_GUIDE.md` instead** — plain English walkthrough.
 
@@ -159,7 +159,7 @@ Read at `Notifier.__init__` time. Required for GitHub Actions where secrets can'
 ```
 visa-tracker-v4/
 ├── visa_tracker_v3.py        # ~4,350 lines (v4.0 patches on v3.2.4 base)
-├── centers.json              # v4.0.0 — 82 centers, 12 visa-free/evisa flagged, 64 active
+├── centers.json              # v4.2.0 — 110+ centers (incl. 30 US consulates), 8 processors
 ├── requirements.txt          # pinned deps incl. windows-toasts
 ├── smoke_test.py             # 7-stage end-to-end verification
 ├── smoke_test.ps1            # PowerShell wrapper
@@ -238,7 +238,7 @@ See `VISA_FREE_GUIDE.md` for full flag reference.
 ## Verify v4.0 features are wired
 
 ```powershell
-python -c "src=open('visa_tracker_v3.py', encoding='utf-8').read(); checks=[('tiered scheduler', 'run_monitor_tiered' in src), ('--tiered flag', '--tiered' in src), ('setup-telegram', '_cmd_setup_telegram' in src), ('select-countries', '_cmd_select_countries' in src), ('set-tier', '_cmd_set_tier' in src), ('TELEGRAM env', 'TELEGRAM_BOT_TOKEN' in src), ('country presets', '_COUNTRY_PRESETS' in src), ('priority queue', 'heappush' in src and 'heappop' in src), ('selftest v4.0', 'SELFTEST (v4.0.0)' in src)]; [print(f'  {chr(10003) if v else chr(10007)} {k}') for k,v in checks]"
+python -c "src=open('visa_tracker_v3.py', encoding='utf-8').read(); checks=[('tiered scheduler', 'run_monitor_tiered' in src), ('--tiered flag', '--tiered' in src), ('setup-telegram', '_cmd_setup_telegram' in src), ('select-countries', '_cmd_select_countries' in src), ('set-tier', '_cmd_set_tier' in src), ('TELEGRAM env', 'TELEGRAM_BOT_TOKEN' in src), ('country presets', '_COUNTRY_PRESETS' in src), ('priority queue', 'heappush' in src and 'heappop' in src), ('US processor', 'USStateDeptProcessor' in src), ('selftest v4.2', 'SELFTEST (v4.2.0)' in src)]; [print(f'  {chr(10003) if v else chr(10007)} {k}') for k,v in checks]"
 ```
 
 All 9 should print `✓`.
