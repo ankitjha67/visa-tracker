@@ -1,0 +1,35 @@
+# Visa Slot Tracker v3.2.3 — Python dependencies
+# Tested against Python 3.10, 3.11, 3.12, 3.13, 3.14 on Windows 11.
+#
+# Install with:
+#   c:\python314\python.exe -m pip install -r requirements.txt
+#
+# Or, if pip warns about user-site:
+#   c:\python314\python.exe -m pip install --user -r requirements.txt
+
+# Core HTTP and networking
+requests>=2.31.0
+urllib3>=1.26.0,<3.0.0
+charset-normalizer>=3.0.0,<4.0.0
+chardet>=5.0.0
+
+# Browser automation — required for Layer 1 (JWT harvest) and Layer 3 (page change)
+selenium>=4.15.0
+webdriver-manager>=4.0.0
+fake-useragent>=1.4.0
+
+# Async websocket/HTTP server (dashboard backend)
+aiohttp>=3.9.0
+websockets>=12.0
+
+# Windows desktop notifications (v3.2.3)
+# Without this, the tracker falls back to PowerShell BalloonTip — works but
+# uses the legacy NotifyIcon UI. With this, you get native Win10/11 toasts
+# that persist in Action Center.
+windows-toasts>=1.3.1; sys_platform == "win32"
+
+# Optional, but recommended:
+#   For HTML dashboard: any modern browser (no Python deps)
+#   For Telegram alerts: no extra deps (uses requests)
+#   For Discord webhooks: no extra deps (uses requests)
+#   For Email: no extra deps (uses smtplib stdlib)

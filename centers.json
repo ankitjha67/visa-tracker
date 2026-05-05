@@ -1,0 +1,2204 @@
+{
+  "version": "4.0.0",
+  "schema": "centers-registry",
+  "generated_at": "2026-05-03",
+  "notes": "India-outbound visa application centers, indexed by (destination_country x processor). v4.0.0 release: added _indian_passport_status flags to 7 visa-free and 5 e-visa destinations (marked enabled=false but kept in file with metadata). Added default 'tier' field to all centers (default 'cold'). Use 'set-tier' CLI to promote priorities to hot/warm. v3.2.4 release: no structural changes; version bump for consistency. v3.2.3 release: consolidates v3.2.2a-d hotfixes (Windows UTF-8 stdout, HEAD->GET preflight, BOM-tolerant config loader, win32 desktop toast path). v3.2.2 added noise-marker schema, rate-limited notifications, delta page-change classifier, selector-phase 5x speedup, JWT circuit breaker. v3.2.1 corrected four misclassified processors (Portugal moved BLS->VFS, Algeria/Tunisia/Mozambique BLS->embassy_direct).",
+  "processors": {
+    "vfs_global": {
+      "name": "VFS Global",
+      "type": "spa_nuxt",
+      "wait_strategy": "spa",
+      "auth_required": true,
+      "url_template": "https://visa.vfsglobal.com/ind/en/{iso3}/",
+      "appointment_path": "/login",
+      "info_path": "/",
+      "notes": "Largest visa processor. Nuxt SPA — hydration wait required. Headquartered Dubai, formerly India. Handles UK, most Schengen, Australia, Canada, China, and 60+ other destinations from India.",
+      "homepage": "https://www.vfsglobal.com/",
+      "auth_method": "jwt_via_selenium",
+      "api_host": "lift-api.vfsglobal.com",
+      "known_api_endpoints": [
+        "https://lift-api.vfsglobal.com/appointment/centerwithearliestslot",
+        "https://lift-api.vfsglobal.com/appointment/slots"
+      ],
+      "api_notes": "Both endpoints are JWT-protected behind Cloudflare. Anonymous fetch returns 403. To use them: open the country's portal in Selenium, complete the category/center selection, harvest the Authorization JWT from network logs or localStorage, then POST to /appointment/slots with countryCode='ind', missionCode=<iso3>, centerCode=<VAC code>, visaCategoryCode=<varies>, languageCode='en-US', applicantsCount=1, days=90, slotType=2."
+    },
+    "bls_international": {
+      "name": "BLS International",
+      "type": "classic_web",
+      "wait_strategy": "load_complete",
+      "auth_required": true,
+      "url_template": "https://india.bls{country}visa.com/",
+      "appointment_path": "book_appointment.php",
+      "notes": "Indian-origin processor (Forbes Asia Best Under a Billion). ASP.NET classic stack. Mainly Spain (8 cities), Slovakia, Portugal, parts of Italy and Czech.",
+      "homepage": "https://www.blsinternational.com/india/"
+    },
+    "tls_contact": {
+      "name": "TLScontact",
+      "type": "spa_react",
+      "wait_strategy": "spa",
+      "auth_required": true,
+      "url_template": "https://visas-{iso2_lower}.tlscontact.com/en-in/",
+      "appointment_path": "appointment",
+      "notes": "Teleperformance-owned. Smaller India footprint than VFS. React SPA. Each destination on its own portal — accounts not shared across countries.",
+      "homepage": "https://www.tlscontact.com/"
+    },
+    "cgi_federal": {
+      "name": "CGI Federal (USTravelDocs)",
+      "type": "classic_web",
+      "wait_strategy": "load_complete",
+      "auth_required": true,
+      "captcha": "aggressive",
+      "url_template": "https://www.usvisascheduling.com/",
+      "appointment_path": "en-US/Appointment/",
+      "notes": "Sole processor for US non-immigrant visas from India. Aggressively rate-limited and CAPTCHA-protected. Scraping against this carries account-lock risk. KEEP DISABLED unless you have explicit consent and rotation infrastructure.",
+      "homepage": "https://www.ustraveldocs.com/in/",
+      "default_enabled": false
+    },
+    "ckgs": {
+      "name": "Cox & Kings Global Services",
+      "type": "classic_web",
+      "wait_strategy": "load_complete",
+      "auth_required": false,
+      "url_template": "https://{country}.ckgs.in/",
+      "notes": "Indian processor. Now mostly handles US passport services, OCI, and some onward routes. Reduced scope vs earlier years.",
+      "homepage": "https://www.ckgs.com/"
+    },
+    "embassy_direct": {
+      "name": "Embassy Direct (no outsourcing)",
+      "type": "varies",
+      "wait_strategy": "load_complete",
+      "auth_required": "varies",
+      "notes": "Some embassies process applications without an outsourced VAC — Bhutan, Maldives, Nepal, Iran (some categories), and others. URLs vary."
+    },
+    "indian_visa_online": {
+      "name": "Indian Visa Online (gov.in)",
+      "type": "classic_web",
+      "wait_strategy": "load_complete",
+      "url_template": "https://indianvisaonline.gov.in/",
+      "notes": "Government of India eVisa portal — for foreign nationals applying TO India. Inverse direction from the rest of this registry."
+    }
+  },
+  "indian_cities": {
+    "vfs_full_network": [
+      "Ahmedabad",
+      "Bengaluru",
+      "Bhubaneswar",
+      "Chandigarh",
+      "Chennai",
+      "Cochin",
+      "Goa",
+      "Hyderabad",
+      "Jaipur",
+      "Jalandhar",
+      "Kolkata",
+      "Mumbai",
+      "New Delhi",
+      "Puducherry",
+      "Pune"
+    ],
+    "vfs_full_network_notes": "VFS Global India network. Bhubaneswar opened April 2026 (Odisha's first). Singapore-specific centers in Chandigarh and Chennai opened April 2026. Not every destination uses every city — see per-center cities array.",
+    "bls_network": [
+      "New Delhi",
+      "Mumbai",
+      "Bengaluru",
+      "Chennai",
+      "Kolkata",
+      "Hyderabad",
+      "Ahmedabad",
+      "Pune",
+      "Chandigarh",
+      "Jalandhar"
+    ],
+    "tls_network": [
+      "New Delhi",
+      "Mumbai",
+      "Bengaluru",
+      "Chennai"
+    ],
+    "cgi_us_consulates": [
+      "New Delhi (Embassy)",
+      "Mumbai",
+      "Chennai",
+      "Hyderabad",
+      "Kolkata"
+    ],
+    "cgi_us_ofcs": [
+      "New Delhi",
+      "Mumbai",
+      "Chennai",
+      "Hyderabad",
+      "Kolkata",
+      "Bengaluru"
+    ]
+  },
+  "centers": [
+    {
+      "id": "vfs_gbr",
+      "destination_country": "United Kingdom",
+      "destination_iso3": "gbr",
+      "destination_iso2": "gb",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/gbr/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Hyderabad",
+        "Kolkata",
+        "Ahmedabad",
+        "Chandigarh",
+        "Pune",
+        "Cochin",
+        "Goa",
+        "Jaipur",
+        "Jalandhar",
+        "Bhubaneswar",
+        "Puducherry"
+      ],
+      "visa_types": [
+        "Visitor",
+        "Business",
+        "Student",
+        "Work",
+        "Family"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_can",
+      "destination_country": "Canada",
+      "destination_iso3": "can",
+      "destination_iso2": "ca",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/can/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Hyderabad",
+        "Kolkata",
+        "Ahmedabad",
+        "Chandigarh",
+        "Pune",
+        "Jalandhar"
+      ],
+      "visa_types": [
+        "Visitor",
+        "Study Permit",
+        "Work Permit",
+        "PR"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_aus",
+      "destination_country": "Australia",
+      "destination_iso3": "aus",
+      "destination_iso2": "au",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/aus/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Hyderabad",
+        "Kolkata",
+        "Ahmedabad",
+        "Chandigarh",
+        "Pune",
+        "Cochin"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Student",
+        "Work",
+        "Subclass-190",
+        "Subclass-491"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_nzl",
+      "destination_country": "New Zealand",
+      "destination_iso3": "nzl",
+      "destination_iso2": "nz",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/nzl/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata"
+      ],
+      "visa_types": [
+        "Visitor",
+        "Student",
+        "Work",
+        "Resident"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_fra",
+      "destination_country": "France",
+      "destination_iso3": "fra",
+      "destination_iso2": "fr",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/fra/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Hyderabad",
+        "Kolkata",
+        "Ahmedabad",
+        "Chandigarh",
+        "Pune",
+        "Cochin",
+        "Goa",
+        "Jaipur",
+        "Jalandhar",
+        "Puducherry"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Long-Stay-Student",
+        "Long-Stay-Work",
+        "Talent-Passport"
+      ],
+      "consulates": [
+        "Embassy of France Delhi",
+        "Consulate Mumbai",
+        "Consulate Bengaluru",
+        "Consulate Kolkata",
+        "Consulate Puducherry"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_deu",
+      "destination_country": "Germany",
+      "destination_iso3": "deu",
+      "destination_iso2": "de",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/deu/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Hyderabad",
+        "Kolkata",
+        "Ahmedabad",
+        "Chandigarh",
+        "Pune",
+        "Cochin",
+        "Jalandhar"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "National-Work",
+        "Job-Seeker",
+        "Chancenkarte",
+        "Student"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_ita",
+      "destination_country": "Italy",
+      "destination_iso3": "ita",
+      "destination_iso2": "it",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/ita/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Ahmedabad",
+        "Pune"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Student",
+        "Work",
+        "Family"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "bls_esp",
+      "destination_country": "Spain",
+      "destination_iso3": "esp",
+      "destination_iso2": "es",
+      "processor": "bls_international",
+      "appointment_url": "https://india.blsspainvisa.com/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Ahmedabad",
+        "Pune"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Student",
+        "Work",
+        "Family"
+      ],
+      "consulates": [
+        "Embassy Delhi",
+        "Consulate Mumbai"
+      ],
+      "jurisdiction_note": "Mumbai jurisdiction accepts apps with travel dates 15+ days from submission",
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_nld",
+      "destination_country": "Netherlands",
+      "destination_iso3": "nld",
+      "destination_iso2": "nl",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/nld/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Ahmedabad",
+        "Chandigarh",
+        "Pune"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "MVV-Long-Stay",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_che",
+      "destination_country": "Switzerland",
+      "destination_iso3": "che",
+      "destination_iso2": "ch",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/che/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Ahmedabad",
+        "Chandigarh",
+        "Pune",
+        "Hyderabad"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_aut",
+      "destination_country": "Austria",
+      "destination_iso3": "aut",
+      "destination_iso2": "at",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/aut/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Pune",
+        "Ahmedabad"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_bel",
+      "destination_country": "Belgium",
+      "destination_iso3": "bel",
+      "destination_iso2": "be",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/bel/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Pune"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_lux",
+      "destination_country": "Luxembourg",
+      "destination_iso3": "lux",
+      "destination_iso2": "lu",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/lux/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_irl",
+      "destination_country": "Ireland",
+      "destination_iso3": "irl",
+      "destination_iso2": "ie",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/irl/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Hyderabad",
+        "Kolkata",
+        "Ahmedabad",
+        "Chandigarh",
+        "Pune",
+        "Cochin",
+        "Jalandhar"
+      ],
+      "visa_types": [
+        "Visitor",
+        "Student",
+        "Work",
+        "Critical-Skills-Employment-Permit"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_swe",
+      "destination_country": "Sweden",
+      "destination_iso3": "swe",
+      "destination_iso2": "se",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/swe/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Pune",
+        "Ahmedabad"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Work",
+        "Student",
+        "Family"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_nor",
+      "destination_country": "Norway",
+      "destination_iso3": "nor",
+      "destination_iso2": "no",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/nor/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Work",
+        "Student"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_dnk",
+      "destination_country": "Denmark",
+      "destination_iso3": "dnk",
+      "destination_iso2": "dk",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/dnk/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Pune",
+        "Ahmedabad"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Work",
+        "Student"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_fin",
+      "destination_country": "Finland",
+      "destination_iso3": "fin",
+      "destination_iso2": "fi",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/fin/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Work",
+        "Student"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_isl",
+      "destination_country": "Iceland",
+      "destination_iso3": "isl",
+      "destination_iso2": "is",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/isl/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_est",
+      "destination_country": "Estonia",
+      "destination_iso3": "est",
+      "destination_iso2": "ee",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/est/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Work",
+        "Student"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_lva",
+      "destination_country": "Latvia",
+      "destination_iso3": "lva",
+      "destination_iso2": "lv",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/lva/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_ltu",
+      "destination_country": "Lithuania",
+      "destination_iso3": "ltu",
+      "destination_iso2": "lt",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/ltu/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_prt",
+      "destination_country": "Portugal",
+      "destination_iso3": "prt",
+      "destination_iso2": "pt",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/prt/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Pune",
+        "Goa"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "D7-Passive-Income",
+        "Golden-Visa",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "notes_v321": "Corrected v3.2.1: VFS Global handles Portugal Schengen from India, not BLS. Embassy of Portugal explicitly mandates VFS.",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_grc",
+      "destination_country": "Greece",
+      "destination_iso3": "grc",
+      "destination_iso2": "gr",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/grc/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_hrv",
+      "destination_country": "Croatia",
+      "destination_iso3": "hrv",
+      "destination_iso2": "hr",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/hrv/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_svn",
+      "destination_country": "Slovenia",
+      "destination_iso3": "svn",
+      "destination_iso2": "si",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/svn/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_cyp",
+      "destination_country": "Cyprus",
+      "destination_iso3": "cyp",
+      "destination_iso2": "cy",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/cyp/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_pol",
+      "destination_country": "Poland",
+      "destination_iso3": "pol",
+      "destination_iso2": "pl",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/pol/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Pune"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_cze",
+      "destination_country": "Czech Republic",
+      "destination_iso3": "cze",
+      "destination_iso2": "cz",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/cze/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_hun",
+      "destination_country": "Hungary",
+      "destination_iso3": "hun",
+      "destination_iso2": "hu",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/hun/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "bls_svk",
+      "destination_country": "Slovakia",
+      "destination_iso3": "svk",
+      "destination_iso2": "sk",
+      "processor": "bls_international",
+      "appointment_url": "https://blsslovakiavisa.com/india/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_rou",
+      "destination_country": "Romania",
+      "destination_iso3": "rou",
+      "destination_iso2": "ro",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/rou/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work",
+        "Student"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_bgr",
+      "destination_country": "Bulgaria",
+      "destination_iso3": "bgr",
+      "destination_iso2": "bg",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/bgr/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Long-Term-Visa-D"
+      ],
+      "notes": "VFS launched Bulgaria long-term visa services in India across 6 cities (2025–26).",
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_srb",
+      "destination_country": "Serbia",
+      "destination_iso3": "srb",
+      "destination_iso2": "rs",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/srb/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_mlt",
+      "destination_country": "Malta",
+      "destination_iso3": "mlt",
+      "destination_iso2": "mt",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/mlt/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Schengen-Tourist",
+        "Schengen-Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_jpn",
+      "destination_country": "Japan",
+      "destination_iso3": "jpn",
+      "destination_iso2": "jp",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/jpn/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Ahmedabad"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Student",
+        "Work",
+        "Specified-Skilled-Worker"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_kor",
+      "destination_country": "South Korea",
+      "destination_iso3": "kor",
+      "destination_iso2": "kr",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/kor/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_sgp",
+      "destination_country": "Singapore",
+      "destination_iso3": "sgp",
+      "destination_iso2": "sg",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/sgp/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Ahmedabad",
+        "Chandigarh",
+        "Pune"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Family-Visit"
+      ],
+      "notes": "VFS opened Chandigarh and Chennai centers for Singapore in April 2026.",
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_chn",
+      "destination_country": "China",
+      "destination_iso3": "chn",
+      "destination_iso2": "cn",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/chn/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Student",
+        "Work",
+        "Family"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_tha",
+      "destination_country": "Thailand",
+      "destination_iso3": "tha",
+      "destination_iso2": "th",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/tha/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Ahmedabad",
+        "Pune",
+        "Cochin"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Education",
+        "Long-Term-Resident"
+      ],
+      "enabled": false,
+      "priority": "high",
+      "confidence": "medium",
+      "_indian_passport_status": "visa_free",
+      "_status_note": "Visa-free 60 days for Indian passport holders since 2024",
+      "_status_alternative_url": "see _status_note for actual application path",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_vnm",
+      "destination_country": "Vietnam",
+      "destination_iso3": "vnm",
+      "destination_iso2": "vn",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/vnm/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": false,
+      "priority": "medium",
+      "confidence": "medium",
+      "_indian_passport_status": "evisa",
+      "_status_note": "E-visa via official portal evisa.xuatnhapcanh.gov.vn, instant approval",
+      "_status_alternative_url": "see _status_note for the actual e-visa portal",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_mys",
+      "destination_country": "Malaysia",
+      "destination_iso3": "mys",
+      "destination_iso2": "my",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/mys/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Student",
+        "Work",
+        "MM2H"
+      ],
+      "enabled": false,
+      "priority": "medium",
+      "confidence": "medium",
+      "_indian_passport_status": "visa_free",
+      "_status_note": "Visa-free 30 days, no application needed",
+      "_status_alternative_url": "see _status_note for actual application path",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_idn",
+      "destination_country": "Indonesia",
+      "destination_iso3": "idn",
+      "destination_iso2": "id",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/idn/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "confidence": "medium",
+      "_indian_passport_status": "visa_free",
+      "_status_note": "Visa-on-arrival, 30 days, ~$35 USD fee but no appointment booking",
+      "_status_alternative_url": "see _status_note for actual application path",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_phl",
+      "destination_country": "Philippines",
+      "destination_iso3": "phl",
+      "destination_iso2": "ph",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/phl/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_twn",
+      "destination_country": "Taiwan",
+      "destination_iso3": "twn",
+      "destination_iso2": "tw",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/twn/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Chennai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "confidence": "medium",
+      "_indian_passport_status": "evisa",
+      "_status_note": "E-visa or visa-on-arrival for Indians with US/UK/Schengen visa",
+      "_status_alternative_url": "see _status_note for the actual e-visa portal",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_are",
+      "destination_country": "United Arab Emirates",
+      "destination_iso3": "are",
+      "destination_iso2": "ae",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/are/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Ahmedabad",
+        "Cochin"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Employment",
+        "Golden-Visa"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_sau",
+      "destination_country": "Saudi Arabia",
+      "destination_iso3": "sau",
+      "destination_iso2": "sa",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/sau/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Cochin",
+        "Ahmedabad"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Umrah",
+        "Business",
+        "Employment",
+        "Family"
+      ],
+      "enabled": true,
+      "priority": "high",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_qat",
+      "destination_country": "Qatar",
+      "destination_iso3": "qat",
+      "destination_iso2": "qa",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/qat/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata",
+        "Hyderabad",
+        "Cochin"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Employment"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_bhr",
+      "destination_country": "Bahrain",
+      "destination_iso3": "bhr",
+      "destination_iso2": "bh",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/bhr/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Cochin"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Employment"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_kwt",
+      "destination_country": "Kuwait",
+      "destination_iso3": "kwt",
+      "destination_iso2": "kw",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/kwt/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Cochin"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Employment"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_omn",
+      "destination_country": "Oman",
+      "destination_iso3": "omn",
+      "destination_iso2": "om",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/omn/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Cochin"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Employment"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_isr",
+      "destination_country": "Israel",
+      "destination_iso3": "isr",
+      "destination_iso2": "il",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/isr/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_tur",
+      "destination_country": "Turkey",
+      "destination_iso3": "tur",
+      "destination_iso2": "tr",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/tur/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_jor",
+      "destination_country": "Jordan",
+      "destination_iso3": "jor",
+      "destination_iso2": "jo",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/jor/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_lbn",
+      "destination_country": "Lebanon",
+      "destination_iso3": "lbn",
+      "destination_iso2": "lb",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/lbn/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "notes": "Disabled by default — operations may be intermittent due to regional situation.",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_zaf",
+      "destination_country": "South Africa",
+      "destination_iso3": "zaf",
+      "destination_iso2": "za",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/zaf/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai",
+        "Kolkata"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_egy",
+      "destination_country": "Egypt",
+      "destination_iso3": "egy",
+      "destination_iso2": "eg",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/egy/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Chennai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "confidence": "medium",
+      "_indian_passport_status": "evisa",
+      "_status_note": "E-visa via visa2egypt.gov.eg",
+      "_status_alternative_url": "see _status_note for the actual e-visa portal",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_ken",
+      "destination_country": "Kenya",
+      "destination_iso3": "ken",
+      "destination_iso2": "ke",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/ken/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "confidence": "medium",
+      "_indian_passport_status": "evisa",
+      "_status_note": "eTA via etakenya.go.ke (replaced eVisa in 2024)",
+      "_status_alternative_url": "see _status_note for the actual e-visa portal",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_mar",
+      "destination_country": "Morocco",
+      "destination_iso3": "mar",
+      "destination_iso2": "ma",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/mar/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_nga",
+      "destination_country": "Nigeria",
+      "destination_iso3": "nga",
+      "destination_iso2": "ng",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/nga/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "emb_dza",
+      "destination_country": "Algeria",
+      "destination_iso3": "dza",
+      "destination_iso2": "dz",
+      "processor": "embassy_direct",
+      "appointment_url": "https://www.algerianembassyindia.in/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "notes_v321": "Corrected v3.2.1: Embassy of Algeria New Delhi handles applications in-person. No online portal. Cannot be monitored automatically.",
+      "confidence": "low",
+      "tier": "cold"
+    },
+    {
+      "id": "emb_tun",
+      "destination_country": "Tunisia",
+      "destination_iso3": "tun",
+      "destination_iso2": "tn",
+      "processor": "embassy_direct",
+      "appointment_url": "https://www.tunisianembassyindia.com/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "notes_v321": "Corrected v3.2.1: Indian citizens are visa-free for tourism (up to 90 days). Business visas via Tunisian Embassy New Delhi, in-person. No online portal.",
+      "confidence": "low",
+      "tier": "cold"
+    },
+    {
+      "id": "emb_moz",
+      "destination_country": "Mozambique",
+      "destination_iso3": "moz",
+      "destination_iso2": "mz",
+      "processor": "embassy_direct",
+      "appointment_url": "https://evisa.gov.mz/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "notes_v321": "Corrected v3.2.1: Mozambique launched its own eVisa portal Feb 2026 (evisa.gov.mz). No BLS site exists. Indians need eVisa for stays >30 days, otherwise visa-free for tourism (per Mozambique Embassy DC).",
+      "confidence": "low",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_mex",
+      "destination_country": "Mexico",
+      "destination_iso3": "mex",
+      "destination_iso2": "mx",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/mex/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_bra",
+      "destination_country": "Brazil",
+      "destination_iso3": "bra",
+      "destination_iso2": "br",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/bra/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_arg",
+      "destination_country": "Argentina",
+      "destination_iso3": "arg",
+      "destination_iso2": "ar",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/arg/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_chl",
+      "destination_country": "Chile",
+      "destination_iso3": "chl",
+      "destination_iso2": "cl",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/chl/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_col",
+      "destination_country": "Colombia",
+      "destination_iso3": "col",
+      "destination_iso2": "co",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/col/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_per",
+      "destination_country": "Peru",
+      "destination_iso3": "per",
+      "destination_iso2": "pe",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/per/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_rus",
+      "destination_country": "Russia",
+      "destination_iso3": "rus",
+      "destination_iso2": "ru",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/rus/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Chennai",
+        "Kolkata"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Student",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "medium",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_kaz",
+      "destination_country": "Kazakhstan",
+      "destination_iso3": "kaz",
+      "destination_iso2": "kz",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/kaz/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Work"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_uzb",
+      "destination_country": "Uzbekistan",
+      "destination_iso3": "uzb",
+      "destination_iso2": "uz",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/uzb/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_geo",
+      "destination_country": "Georgia",
+      "destination_iso3": "geo",
+      "destination_iso2": "ge",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/geo/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_arm",
+      "destination_country": "Armenia",
+      "destination_iso3": "arm",
+      "destination_iso2": "am",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/arm/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "vfs_aze",
+      "destination_country": "Azerbaijan",
+      "destination_iso3": "aze",
+      "destination_iso2": "az",
+      "processor": "vfs_global",
+      "appointment_url": "https://visa.vfsglobal.com/ind/en/aze/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business"
+      ],
+      "enabled": true,
+      "priority": "low",
+      "confidence": "medium",
+      "tier": "cold"
+    },
+    {
+      "id": "cgi_usa",
+      "destination_country": "United States of America",
+      "destination_iso3": "usa",
+      "destination_iso2": "us",
+      "processor": "cgi_federal",
+      "appointment_url": "https://www.usvisascheduling.com/",
+      "alternate_url": "https://www.ustraveldocs.com/in/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Chennai",
+        "Hyderabad",
+        "Kolkata",
+        "Bengaluru"
+      ],
+      "consulates": [
+        "US Embassy New Delhi",
+        "US Consulate Mumbai",
+        "US Consulate Chennai",
+        "US Consulate Hyderabad",
+        "US Consulate Kolkata"
+      ],
+      "ofcs": [
+        "New Delhi",
+        "Mumbai",
+        "Chennai",
+        "Hyderabad",
+        "Kolkata",
+        "Bengaluru"
+      ],
+      "visa_types": [
+        "B1-B2",
+        "F1-Student",
+        "H1B",
+        "L1",
+        "O1",
+        "J1",
+        "M1",
+        "EB-Categories"
+      ],
+      "enabled": false,
+      "priority": "high",
+      "notes": "DISABLED BY DEFAULT. CGI Federal aggressively rate-limits and CAPTCHAs scrapers, and accounts can be locked. Do not enable without proxy rotation, human-in-the-loop CAPTCHA, and explicit acknowledgement of risk.",
+      "confidence": "low",
+      "tier": "cold"
+    },
+    {
+      "id": "ckgs_usa_passport",
+      "destination_country": "United States (Indian passport/OCI services)",
+      "destination_iso3": "usa",
+      "destination_iso2": "us",
+      "processor": "ckgs",
+      "appointment_url": "https://www.in.ckgs.us/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai",
+        "Bengaluru",
+        "Hyderabad",
+        "Houston",
+        "San-Francisco",
+        "Chicago",
+        "New-York",
+        "Atlanta"
+      ],
+      "visa_types": [
+        "Indian-Passport-Renewal",
+        "OCI",
+        "Renunciation"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "notes": "CKGS handles Indian consular services for Indian-origin people in the US — inverse direction. Mostly out of scope for India-outbound tracking but listed for completeness.",
+      "confidence": "low",
+      "tier": "cold"
+    },
+    {
+      "id": "embassy_btn",
+      "destination_country": "Bhutan",
+      "destination_iso3": "btn",
+      "destination_iso2": "bt",
+      "processor": "embassy_direct",
+      "appointment_url": "https://www.mfa.gov.bt/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Permit-on-Arrival"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "notes": "Indian nationals do not need a visa for Bhutan — only an entry permit issued at the border. No appointment system to track.",
+      "confidence": "low",
+      "_indian_passport_status": "visa_free",
+      "_status_note": "No visa for Indians; free entry permit at border",
+      "_status_alternative_url": "see _status_note for actual application path",
+      "tier": "cold"
+    },
+    {
+      "id": "embassy_npl",
+      "destination_country": "Nepal",
+      "destination_iso3": "npl",
+      "destination_iso2": "np",
+      "processor": "embassy_direct",
+      "appointment_url": "https://in.nepalembassy.gov.np/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "No-Visa-Required"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "notes": "Indian nationals do not need a visa for Nepal.",
+      "confidence": "low",
+      "_indian_passport_status": "visa_free",
+      "_status_note": "Visa-free entry by air or land for Indian citizens",
+      "_status_alternative_url": "see _status_note for actual application path",
+      "tier": "cold"
+    },
+    {
+      "id": "embassy_mdv",
+      "destination_country": "Maldives",
+      "destination_iso3": "mdv",
+      "destination_iso2": "mv",
+      "processor": "embassy_direct",
+      "appointment_url": "https://www.immigration.gov.mv/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "Visa-on-Arrival"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "notes": "Visa-on-arrival, no advance appointment needed.",
+      "confidence": "low",
+      "_indian_passport_status": "visa_free",
+      "_status_note": "Visa-on-arrival, 30 days free",
+      "_status_alternative_url": "see _status_note for actual application path",
+      "tier": "cold"
+    },
+    {
+      "id": "embassy_lka",
+      "destination_country": "Sri Lanka",
+      "destination_iso3": "lka",
+      "destination_iso2": "lk",
+      "processor": "embassy_direct",
+      "appointment_url": "https://www.eta.gov.lk/",
+      "indian_cities": [
+        "New Delhi"
+      ],
+      "visa_types": [
+        "ETA-Tourist",
+        "Business"
+      ],
+      "enabled": false,
+      "priority": "medium",
+      "notes": "ETA system, online application.",
+      "confidence": "low",
+      "_indian_passport_status": "visa_free",
+      "_status_note": "Free 30-day double-entry ETA, confirmed permanent in 2026 by Sri Lankan High Commissioner",
+      "_status_alternative_url": "see _status_note for actual application path",
+      "tier": "cold"
+    },
+    {
+      "id": "embassy_irn",
+      "destination_country": "Iran",
+      "destination_iso3": "irn",
+      "destination_iso2": "ir",
+      "processor": "embassy_direct",
+      "appointment_url": "https://newdelhi.mfa.gov.ir/",
+      "indian_cities": [
+        "New Delhi",
+        "Mumbai"
+      ],
+      "visa_types": [
+        "Tourist",
+        "Business",
+        "Pilgrimage"
+      ],
+      "enabled": false,
+      "priority": "low",
+      "confidence": "low",
+      "_indian_passport_status": "evisa",
+      "_status_note": "E-visa via evisatraveller.mfa.ir, instant approval",
+      "_status_alternative_url": "see _status_note for the actual e-visa portal",
+      "tier": "cold"
+    }
+  ],
+  "_indian_passport_status_legend": {
+    "visa_free": "Indian passport holders enter visa-free or visa-on-arrival. No appointment slot to monitor. enabled is forced to false. To re-enable for other passports, change enabled to true.",
+    "evisa": "E-visa with instant or near-instant approval. No appointment slot to monitor. See _status_note for the actual application URL.",
+    "appointment_required": "Standard visa requiring an appointment at a VFS / BLS / consulate slot. Monitor normally.",
+    "null_or_missing": "Default; treat as appointment_required."
+  }
+}

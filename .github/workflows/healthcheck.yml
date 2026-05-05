@@ -1,0 +1,87 @@
+name: Daily Healthcheck
+
+# v4.0.0 — Sends a daily Telegram message confirming the tracker is alive
+# and reporting on the last successful monitor run. Without this, you might
+# not notice if the monitor workflow has been silently failing for days.
+#
+# Runs at 03:00 UTC = 08:30 IST every day. Quick (under a minute).
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # daily at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  healthcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Restore tracker state
+        uses: actions/cache@v4
+        with:
+          path: visa_slots.db
+          key: visa-state-healthcheck-${{ github.run_id }}
+          restore-keys: |
+            visa-state-
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Send healthcheck ping
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          pip install requests
+          python -c "
+          import os, requests, sqlite3, datetime, sys
+
+          token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+          chat = os.environ.get('TELEGRAM_CHAT_ID', '')
+          if not token or not chat:
+              print('No Telegram credentials configured; skipping ping.')
+              sys.exit(0)
+
+          # Attempt to read DB stats for a richer ping
+          summary_lines = ['🤖 Visa Tracker Daily Healthcheck']
+          summary_lines.append(f'Time: {datetime.datetime.utcnow().isoformat()}Z')
+
+          if os.path.exists('visa_slots.db'):
+              try:
+                  con = sqlite3.connect('visa_slots.db')
+                  cur = con.cursor()
+                  cur.execute('SELECT COUNT(*) FROM checks WHERE checked_at > datetime(\"now\", \"-24 hours\")')
+                  recent_checks = cur.fetchone()[0]
+                  cur.execute('SELECT COUNT(*) FROM slots WHERE expires_at > datetime(\"now\")')
+                  active_slots = cur.fetchone()[0]
+                  cur.execute('SELECT COUNT(*) FROM checks WHERE status = \"error\" AND checked_at > datetime(\"now\", \"-24 hours\")')
+                  errors_24h = cur.fetchone()[0]
+                  con.close()
+
+                  summary_lines.append(f'Checks (24h): {recent_checks}')
+                  summary_lines.append(f'Active slots: {active_slots}')
+                  summary_lines.append(f'Errors (24h): {errors_24h}')
+              except Exception as e:
+                  summary_lines.append(f'(could not read DB: {e})')
+          else:
+              summary_lines.append('(no state DB found yet — monitor may not have run yet)')
+
+          summary_lines.append('')
+          summary_lines.append('If you stop seeing these daily, the cron is broken.')
+
+          requests.post(
+              f'https://api.telegram.org/bot{token}/sendMessage',
+              json={
+                  'chat_id': chat,
+                  'text': '\n'.join(summary_lines),
+              },
+              timeout=10,
+          )
+          print('Healthcheck ping sent.')
+          "

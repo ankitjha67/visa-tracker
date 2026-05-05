@@ -1,0 +1,75 @@
+# ============================================================================
+# Visa Slot Tracker — .gitignore
+# ============================================================================
+# CRITICAL: This file prevents personal data and secrets from being committed.
+# Never remove the entries marked with [SENSITIVE] without thinking carefully.
+# ============================================================================
+
+# [SENSITIVE] Runtime state — contains JWT cache, page hashes, slot history
+visa_slots.db
+visa_slots.db-journal
+visa_slots.db-wal
+visa_slots.db-shm
+
+# [SENSITIVE] User config — may contain Telegram bot tokens, email passwords
+# Use config.example.json as the committed template instead
+config.json
+
+# [SENSITIVE] Logs — may contain personal info, country/city queries, errors
+test_logs/
+*.log
+visa_tracker.log
+
+# Python build/cache artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+develop-eggs/
+*.egg-info/
+*.egg
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / editor metadata
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Selenium / webdriver caches
+.wdm/
+chromedriver*
+*.crx
+
+# Temp files from PowerShell sessions
+*.tmp
+*.bak
+
+# Coverage / test artifacts (if you add tests later)
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Pyinstaller (if anyone packages the tracker)
+*.manifest
+*.spec
+
+# Notebook checkpoints (if anyone explores the data)
+.ipynb_checkpoints/

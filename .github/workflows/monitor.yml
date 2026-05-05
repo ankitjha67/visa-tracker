@@ -1,0 +1,98 @@
+name: Monitor Visa Slots
+
+# v4.0.0 — Cron-based monitor that runs the tracker every 30 minutes.
+# Why 30 min and not the v3.2.x default of 90? GitHub Actions has cron jitter
+# of 5-30 min during peak hours, so a 30-min cron usually fires every 35-60
+# min in practice. Closer to a 60-min effective cycle. Don't go below 15min
+# cron — Actions will skip runs entirely under load.
+#
+# State (visa_slots.db) persists between runs via Actions cache.
+# Notifications use Telegram (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+# in repo Settings → Secrets and variables → Actions).
+#
+# To pause monitoring without deleting the workflow: comment out the schedule
+# line. The workflow_dispatch trigger lets you run it manually anytime.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # every 30 min (UTC). See note above re: cron jitter.
+  workflow_dispatch:           # manual run from Actions tab
+
+# Cancel any in-progress runs when a new one starts (avoids overlap)
+concurrency:
+  group: visa-monitor
+  cancel-in-progress: false  # let in-progress runs complete
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25       # hard kill if cycle hangs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Restore tracker state (visa_slots.db)
+        uses: actions/cache@v4
+        with:
+          path: visa_slots.db
+          # Unique key per run prevents cache collision; restore-keys
+          # falls back to the most recent matching cache.
+          key: visa-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            visa-state-
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run a single check cycle
+        env:
+          # Telegram credentials (required for notifications)
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Live notifications by default; override with NOTIFICATION_DRY_RUN=true
+          # secret if you want to test without spamming
+          NOTIFICATION_DRY_RUN: ${{ vars.NOTIFICATION_DRY_RUN || 'false' }}
+        run: |
+          python visa_tracker_v3.py run --once
+
+      - name: Save tracker state
+        if: always()  # save even if the cycle errored, so we keep partial progress
+        uses: actions/cache/save@v4
+        with:
+          path: visa_slots.db
+          key: visa-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Notify on workflow failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -c "
+          import os, requests
+          token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+          chat = os.environ.get('TELEGRAM_CHAT_ID', '')
+          if token and chat:
+              requests.post(
+                  f'https://api.telegram.org/bot{token}/sendMessage',
+                  json={
+                      'chat_id': chat,
+                      'text': '⚠ Visa tracker workflow FAILED. Check the Actions tab on GitHub for logs.'
+                  },
+                  timeout=10,
+              )
+          "
