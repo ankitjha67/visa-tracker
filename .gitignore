@@ -73,3 +73,8 @@ htmlcov/
 
 # Notebook checkpoints (if anyone explores the data)
 .ipynb_checkpoints/
+
+# Local debug scratch files
+_diag.py
+_scratch_*.py
+
