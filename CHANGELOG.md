@@ -2,6 +2,40 @@
 
 All notable changes to the Visa Slot Tracker.
 
+## [4.2.1] — 2026-05-05
+
+**Disclaimer hardening + legal transparency.** No functional code changes; v4.2.0 features remain. This release adds a comprehensive disclaimer suite to clarify the project's research-and-education purpose, document architectural commitments, and provide good-faith case-law analysis for any party (users, GitHub Trust & Safety, regulators, counsel) reviewing the project's posture.
+
+### Added
+
+- **`DISCLAIMER.md`** (top-level) — user-facing scope statement. Covers: (1) what this project is and is not affiliated with, (2) what it does (read-only monitoring of three categories of public data), (3) what it explicitly does not do (no auto-booking, no credential storage, no CAPTCHA bypass, no proxy evasion, no personal-data collection, no commercial agent operation), (4) user responsibility breakdown, (5) prohibited uses inconsistent with stated purpose, (6) explicit framing of the U.S. Embassy India March 2025 announcement and why this software is not the kind of tool it targeted, (7) educational and research purpose statement, (8) trademark non-grant.
+
+- **`LEGAL.md`** (top-level) — case-law-anchored legal posture document. Covers: (1) architecture summary mapped to legal frames, (2) review of relevant authorities (hiQ Labs v. LinkedIn 9th Cir. 2022, Van Buren v. United States S.Ct. 2021, Sandvig v. Barr D.D.C. 2020, Power Ventures v. Facebook 9th Cir. 2016, Craigslist v. 3Taps N.D. Cal. 2013, Feist v. Rural Telephone S.Ct. 1991, 17 U.S.C. § 105, Section 43/66 of India's IT Act 2000, GDPR scope, UK Computer Misuse Act 1990), (3) seven explicit architectural commitments (no credentialed access, no CAPTCHA solving, no proxy evasion, no auto-booking, no personal-data collection, conservative polling defaults, graceful failure), (4) response procedures for DMCA, C&D, government inquiries, and Trust & Safety reviews, (5) sources of further information (EFF, SFLC, GitHub Site Policy, CIS India).
+
+- **README banner** — prominent disclaimer block at the top of `README.md` summarizing the scope and pointing to `DISCLAIMER.md` and `LEGAL.md`. Reframes the project front-page as "open-source research and educational" software rather than "personal automation that watches visa appointment websites."
+
+- **CLI first-run disclaimer** — `_first_run_disclaimer_check()` in `visa_tracker_v3.py`. Shows a one-time scope-and-responsibility notice on first invocation; user types 'yes' to acknowledge; an acknowledgment marker is written to `~/.visa_tracker_acknowledged` and the prompt is skipped on subsequent runs. Skipped automatically for: (a) `--help`, `version`, `selftest` and similar informational commands, (b) CI environments (`CI=true` or `GITHUB_ACTIONS=true` env vars), (c) explicit opt-out via `VISA_TRACKER_NO_PROMPT=1`. The prompt cites the U.S. Embassy India March 2025 announcement and explains why this software is not its target.
+
+### Changed
+
+- **README.md** restructured. Disclaimer banner moved to top. New "What it does" section emphasizes the three read-only data layers and their public-data nature. New "What it does NOT do" section makes the architectural exclusions explicit. Bottom "Disclaimer & legal posture" section points to `DISCLAIMER.md` and `LEGAL.md`. Trademark non-grant added to license section.
+
+- **Version stamps** updated: `visa_tracker_v3.py` header docstring, `centers.json` version field, `smoke_test.py` `EXPECTED_VERSION`, all selftest output strings → 4.2.1.
+
+### Why
+
+The maintainer reviewed the project's legal posture against current scraping case law (post-`hiQ` and post-`Van Buren`), GDPR enforcement trends (Clearview AI, Kaspr), the U.S. Embassy India March 2025 enforcement announcement, and GitHub's DMCA / Acceptable Use / Trust & Safety policies. The conclusion: the project's architecture is well-positioned (no credentialed access, no auto-booking, no personal-data collection, no proxy evasion, public-data layer cleanly within hiQ's "no gates" framework, U.S. State Department data statutorily public domain under 17 U.S.C. § 105), but the *framing* in v4.2.0 was understated. v4.2.1 brings the framing in line with the architecture.
+
+This is a defensive update. No new features were added; no existing features were removed. The intent is to ensure that anyone — user, complainant, GitHub reviewer, regulator, counsel — encountering this project for the first time understands what it is and is not, what it does and does not do, and where the maintainer stands on the relevant authorities.
+
+### Migration from v4.2.0
+
+Drop-in. Existing `visa_slots.db` and `config.json` work unchanged.
+
+On first run, you'll see a one-time disclaimer prompt. Type `yes` to acknowledge. The prompt is skipped on subsequent runs. To skip in CI/CD or GitHub Actions, set `VISA_TRACKER_NO_PROMPT=1` (or run in a `CI` / `GITHUB_ACTIONS` environment, which is auto-detected).
+
+---
+
 ## [4.2.0] — 2026-05-05
 
 **US tracker expansion + internationalization.** v4.1.0 implemented US wait-time tracking for 5 Indian consulates; v4.2.0 extends the same processor to 30 third-country US consulates (the "interview at third country" workaround that Indian applicants use when domestic queues are years long). Plus comprehensive non-Indian-user documentation.

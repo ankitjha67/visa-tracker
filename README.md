@@ -1,21 +1,53 @@
 # Visa Slot Tracker
 
-Personal automation that watches visa appointment websites and notifies you the moment a slot opens up. Built primarily for Indian travellers chasing UK Skilled Worker, Canada Express Entry, Schengen, US, and other competitive visa corridors — but the architecture is **passport-agnostic** and can be adapted for any origin country (see [INTERNATIONALIZATION_GUIDE.md](INTERNATIONALIZATION_GUIDE.md)).
+> **⚠️ Important — please read before using:**
+>
+> This is an **open-source research and educational project**. It is a **read-only monitor** that watches publicly available visa-availability information and notifies you when it changes. **It does not book appointments. It does not store credentials. It does not bypass CAPTCHAs. It does not act as an agent or fixer.**
+>
+> The project has **no affiliation** with VFS Global, BLS International, TLScontact, CGI Federal, the U.S. Department of State, or any embassy or consulate.
+>
+> **You** are responsible for complying with the terms of service of any portal you choose to monitor and the laws of your jurisdiction. **Please read [`DISCLAIMER.md`](DISCLAIMER.md) before installing.** For the project's legal posture and architectural commitments, see [`LEGAL.md`](LEGAL.md).
 
-**Version:** v4.2.0
+---
+
+A personal-use, MIT-licensed Python project that watches visa appointment websites and notifies you when their public availability pages change. Built primarily as a research artifact and consumer-information tool for Indian travellers tracking competitive visa corridors (UK Skilled Worker, Canada Express Entry, Schengen, U.S. wait times) — but the architecture is **passport-agnostic** and can be adapted for any origin country (see [INTERNATIONALIZATION_GUIDE.md](INTERNATIONALIZATION_GUIDE.md)).
+
+**Version:** v4.2.1
 **Status:** production-validated against real VFS Global traffic (22+ hours, 1,972 page-change events, 4 confirmed real slot detections in Czech Republic May 2026)
 **Platform:** Windows 10/11 (primary), macOS/Linux (secondary), GitHub Actions (cloud)
+**License:** MIT
+**Purpose:** research, education, transparency, consumer information
 
 ## What it does
 
-- Monitors **110+ visa application centres** across **45+ destination countries**, including 5 Indian US consulates and 30 third-country US consulates (Mexico, Canada, UAE, Saudi Arabia, etc.)
-- Detects new appointment slots via three layers (VFS JWT API replay, anonymous API discovery, page-change classifier) for VFS countries
-- Detects significant wait-time drops at US consulates worldwide (state.gov + CGI Federal public data)
-- Notifies via **desktop toast + Telegram + email + Discord** (all configurable)
-- Suppresses 100% of cosmetic noise that crashed v3.2.0 (validated across 1,968 false-positive events)
-- Runs on your laptop or in **GitHub Actions** for 24/7 cloud monitoring
+This project performs **read-only** monitoring of three categories of **publicly accessible** data:
 
-## What's new in v4.2.0
+1. **Public landing pages** of visa application centres — hashes visible page text and detects changes (the same operation a human would perform by refreshing a browser tab).
+2. **Anonymous availability endpoints** that issue tokens to any visitor without requiring login or account creation.
+3. **U.S. Department of State public wait-time data** at `travel.state.gov` — federal government data that, under 17 U.S.C. § 105, is statutorily in the public domain.
+
+When the data changes, the tool notifies the user via desktop toast, Telegram, email, or Discord — channels the user configures on their own infrastructure.
+
+Coverage at v4.2.1: **110+ visa application centres** across **45+ destination countries**, including 5 Indian US consulates and 30 third-country US consulates (Mexico, Canada, UAE, Saudi Arabia, etc.). Tier-based polling (hot/warm/cold) keeps default request volume comparable to a single human user actively monitoring a site. False-positive noise from v3.2.0 (1,968 cosmetic events) is fully suppressed.
+
+## What it does NOT do
+
+These are deliberate architectural commitments documented in [`LEGAL.md`](LEGAL.md). The software does not, and will not be modified to:
+
+- ❌ Submit, book, reschedule, or cancel any appointment
+- ❌ Store, transmit, or use any user credentials (no DS-160, no CGI Federal login, no usvisa-info.com login, no VFS account credentials)
+- ❌ Solve, bypass, or circumvent CAPTCHAs (no 2Captcha, no DeathByCaptcha, no anti-Cloudflare bypass libraries)
+- ❌ Use VPN rotation, proxy networks, or IP masking to evade rate limits or access controls
+- ❌ Collect, aggregate, or distribute personal data of any visa applicant
+- ❌ Operate as a paid service or commercial booking agent of any kind
+
+If you need any of the above, **this is not the right software** and the maintainer will not implement those features. See [`DISCLAIMER.md`](DISCLAIMER.md) for the full scope statement.
+
+## What's new in v4.2.1
+
+**Disclaimer hardening and legal transparency.** Added [`DISCLAIMER.md`](DISCLAIMER.md), [`LEGAL.md`](LEGAL.md), and CLI first-run notice documenting the project's research-and-education purpose, architectural commitments, and good-faith analysis of relevant case law (hiQ Labs v. LinkedIn, Van Buren v. United States, Section 43/66 of India's IT Act 2000, GDPR scope). No functional code changes; v4.2.0 features remain.
+
+## What was new in v4.2.0
 
 **Third-country US consulate tracking** — extended `USStateDeptProcessor` to 30 US consulates worldwide where Indians (or anyone) might pursue the "third-country interview" workaround when domestic queues are years long. Mexico (10 consulates), Canada (7), UAE/Saudi Arabia (4), plus Singapore, Thailand, UK, France, Germany, Australia, Japan. All disabled by default — opt in via `select-countries`.
 
@@ -120,13 +152,23 @@ This is a personal project, but PRs are welcome. The high-impact areas:
 - **New countries** — most VFS countries can be added by editing `centers.json`. See `ADDING_COUNTRIES.md`.
 - **Embassy reference table** — corrections welcome if any URLs in `ADDING_COUNTRIES.md` have rotted.
 
-## Disclaimer
+## Disclaimer & legal posture
 
-This project is unaffiliated with VFS Global, BLS International, TLS Contact, or any embassy/consulate. It only reads publicly visible content from official appointment portals. Use at your own risk; respect the terms of service of any site you point it at.
+This project is unaffiliated with VFS Global, BLS International, TLScontact, CGI Federal, or any embassy or consulate. It is published as **open-source research and educational software** for personal, journalistic, and academic use.
+
+**Before installing, please read [`DISCLAIMER.md`](DISCLAIMER.md)** for the full scope statement, prohibited-use guidance, and user responsibility breakdown.
+
+**For the project's posture on relevant case law** (hiQ Labs v. LinkedIn, Van Buren v. United States, Section 43/66 of India's IT Act 2000, GDPR scope, the U.S. Embassy India March 2025 announcement), see [`LEGAL.md`](LEGAL.md).
+
+The maintainer commits to the architectural choices documented in `LEGAL.md` — no auto-booking, no credential storage, no CAPTCHA bypass, no proxy rotation, no personal-data collection. Departing from any of these would change the legal analysis materially and is not contemplated.
+
+**If you have a concern** (technical or legal) as a representative of any monitored entity, please open a GitHub issue or send a written notice to this repository. The maintainer commits to responding within 5 business days for technical concerns and through GitHub's notice-and-response process for formal legal notices.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+The MIT License does not grant trademark rights to "VFS Global," "BLS International," "TLScontact," "CGI Federal," or any consulate or embassy name appearing in this code. Such names are the property of their respective owners and are referenced only as factual identifiers.
 
 ---
 

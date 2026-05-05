@@ -1,5 +1,5 @@
 {
-  "version": "4.2.0",
+  "version": "4.2.1",
   "schema": "centers-registry",
   "generated_at": "2026-05-03",
   "notes": "India-outbound visa application centers, indexed by (destination_country x processor). v4.2.0 release: extended us_state_dept processor to 30 third-country US consulates (Mexico 10, Canada 7, UAE 2, Saudi 2, plus Singapore/Thailand/UK/France/Germany/Australia/Japan). Added accent-handling for non-ASCII consulate names. New INTERNATIONALIZATION_GUIDE.md for non-Indian users. Schengen documentation enhanced (no Schengen wait-time tracker — VFS layer is the right mechanism, validated for Czech Republic May 2026). v4.1.0 release: added 5 US consulate entries (Mumbai, New Delhi, Chennai, Hyderabad, Kolkata) using new us_state_dept processor for wait-time tracking via state.gov + CGI Federal public pages. v4.0.0 release: added _indian_passport_status flags to 7 visa-free and 5 e-visa destinations, default 'tier' field on all centers, tier system (hot/warm/cold). v3.2.4 release: no structural changes; version bump for consistency. v3.2.3 release: consolidates v3.2.2a-d hotfixes. v3.2.2 added noise-marker schema, rate-limited notifications, delta classifier. v3.2.1 corrected four misclassified processors.",

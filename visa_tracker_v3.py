@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Visa Slot Tracker v4.2.0 — Third-country US consulates + internationalization
+Visa Slot Tracker v4.2.1 — Disclaimer hardening + legal transparency + internationalization
 
 v4.2.0 expansions:
   • Extended USStateDeptProcessor to 30+ US consulates worldwide (Mexico,
@@ -3818,12 +3818,120 @@ def interactive_setup():
 #  CLI
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+def _first_run_disclaimer_check():
+    """v4.2.1 — Show a one-time disclaimer on first CLI invocation.
+
+    Writes a small acknowledgment marker to ~/.visa_tracker_acknowledged
+    after the user accepts. Skipped on subsequent runs.
+
+    The purpose is to (a) ensure every user reads the project's scope and
+    intended-use statement at least once, (b) document downstream user
+    accountability for compliance with portal terms of service and local
+    law, and (c) shift contractual privity to the user — the maintainer
+    publishes source code under MIT; the user runs it on their own
+    infrastructure under their own responsibility. See LEGAL.md.
+
+    Set environment variable VISA_TRACKER_NO_PROMPT=1 to skip (intended
+    for CI/CD and automated GitHub Actions workflows where the operator
+    is the same as the deployer and has already acknowledged).
+    """
+    import os as _os
+    from pathlib import Path as _Path
+
+    # CI/automation skip
+    if _os.environ.get("VISA_TRACKER_NO_PROMPT") == "1":
+        return
+    if _os.environ.get("CI") or _os.environ.get("GITHUB_ACTIONS"):
+        return
+
+    marker_path = _Path.home() / ".visa_tracker_acknowledged"
+    if marker_path.exists():
+        return
+
+    # Skip for one-shot informational commands that don't actually monitor
+    skip_for_cmds = {"--help", "-h", "help", "version", "--version", "selftest"}
+    if len(sys.argv) >= 2 and sys.argv[1] in skip_for_cmds:
+        return
+
+    print()
+    print("=" * 72)
+    print("  Visa Slot Tracker — First-Run Notice")
+    print("=" * 72)
+    print()
+    print("  This is open-source RESEARCH AND EDUCATIONAL software.")
+    print()
+    print("  WHAT IT DOES:")
+    print("    Read-only monitoring of publicly available visa-availability")
+    print("    pages and US Department of State public wait-time data. Notifies")
+    print("    you when the data changes. That is the entire scope.")
+    print()
+    print("  WHAT IT DOES NOT DO:")
+    print("    Does NOT book, reschedule, or cancel appointments.")
+    print("    Does NOT store or use any user credentials.")
+    print("    Does NOT bypass CAPTCHAs or use proxy/VPN evasion.")
+    print("    Does NOT collect personal data of any visa applicant.")
+    print("    Has NO affiliation with VFS Global, BLS, TLScontact, CGI Federal,")
+    print("    the US Department of State, or any embassy/consulate.")
+    print()
+    print("  YOUR RESPONSIBILITY:")
+    print("    You are responsible for complying with the terms of service of")
+    print("    any portal you choose to monitor and the laws of your jurisdiction.")
+    print("    You are responsible for the consequences of any appointment you")
+    print("    book using information surfaced by this tool. The booking action")
+    print("    happens entirely OUTSIDE this software through official channels.")
+    print()
+    print("  IMPORTANT:")
+    print("    The US Embassy in India announced in March 2025 the cancellation")
+    print("    of ~2,000 appointments made by booking bots. This software does")
+    print("    NOT auto-book and is not the kind of tool that announcement")
+    print("    targeted. But applicants who manipulate any visa scheduling")
+    print("    system (regardless of method) face appointment cancellation,")
+    print("    visa refusal, or visa cancellation. Use information from this")
+    print("    tool to manually book appointments through legitimate channels.")
+    print()
+    print("  Read DISCLAIMER.md and LEGAL.md before continuing.")
+    print()
+    print("=" * 72)
+    print()
+    try:
+        response = input("  Type 'yes' to acknowledge and continue: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        print("  Acknowledgment required. Exiting.")
+        sys.exit(1)
+
+    if response != "yes":
+        print()
+        print("  Acknowledgment declined. Exiting.")
+        print("  (Run again and type 'yes' if you have read and understood")
+        print("   the scope, limitations, and your responsibilities.)")
+        sys.exit(1)
+
+    # Write the marker so we don't prompt again
+    try:
+        marker_path.write_text(
+            f"acknowledged at {datetime.now().isoformat()}\n"
+            f"version: 4.2.1\n"
+            f"see DISCLAIMER.md and LEGAL.md in the repository\n"
+        )
+    except Exception as e:
+        # Non-fatal — re-prompting is fine if we can't write the marker
+        log.warning(f"Could not write acknowledgment marker: {e}")
+
+    print()
+    print("  Thank you. Acknowledgment recorded. Continuing...")
+    print()
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return
 
     cmd = sys.argv[1]
+
+    # v4.2.1 — first-run disclaimer
+    _first_run_disclaimer_check()
 
     signal.signal(signal.SIGINT, lambda *_: (log.info("Stopping..."), sys.exit(0)))
 
@@ -4135,7 +4243,7 @@ def main():
                 print(f"  ✗ {name}  →  {str(e)[:200]}")
 
         print("\n" + "="*60)
-        print("  VISA TRACKER — SELFTEST (v4.2.0)")
+        print("  VISA TRACKER — SELFTEST (v4.2.1)")
         print("="*60)
 
         # 1. Registry loads
@@ -4324,7 +4432,7 @@ def main():
             print("="*60 + "\n")
             sys.exit(1)
         else:
-            print(f"\n  ✓ All checks passed — v4.2.0 is wired up correctly.")
+            print(f"\n  ✓ All checks passed — v4.2.1 is wired up correctly.")
             print(f"  Next: `python visa_tracker_v3.py verify-urls` then calibrate.")
             print("="*60 + "\n")
 
