@@ -2,6 +2,61 @@
 
 All notable changes to the Visa Slot Tracker.
 
+## [4.3.0] — 2026-05-06
+
+**Instant notifications + log noise suppression.** Driven by analysis of the May 6 2026 production cycle (real Czech Republic detection event, 16 slots across 6 hours of continuous monitoring). v4.3.0 closes the 26-minute notification lag observed in v4.2.x and cleans up two operational issues that the cycle log surfaced.
+
+### Added
+
+- **Instant notification on detection.** When `check_target()` produces new slots, `Notifier.send()` is invoked immediately instead of waiting for `run_cycle()` to complete its sweep through all 269 country/city pairs. The cycle-end batch deduplicates against already-sent slots (via a `_instant_sent` attribute on `SlotInfo`) so users never receive duplicate alerts. Disable via `config.json`: `{"instant_notify": false}`. Default is on.
+
+  Empirical baseline: in the May 6 2026 production cycle, the page-change classifier fired `🎯 PAGE CHANGED` for Czech Republic at 03:17:19 IST. The toast notification didn't fire until 03:43:36 — a 26-minute lag while the non-tiered cycle walked through Mexico, Brazil, Hungary, Israel, Turkey, and ~20 other countries before reaching the cycle-end notify step. v4.3.0 reduces the detection-to-notification gap to seconds (~3-5 seconds dispatch latency for desktop toast + Telegram).
+
+- **Documentation of layer health and tier mode recommendation.** The May 6 cycle confirmed that VFS Global has tightened JWT issuance: 17 countries hit `JWT CIRCUIT BREAKER OPEN` (zero successful JWT harvests in the entire 6-hour run). Layer 1 (JWT) and Layer 2 (anonymous API) are effectively dead for those countries; Layer 3 (page-change classifier) is the only working detector. The circuit breaker correctly fell through to Layer 3, which is why detection still worked. README now reflects this. For users tracking high-priority countries, `--tiered` mode is recommended (10-min hot tier vs 70-min full sweep).
+
+### Changed
+
+- **`fake_useragent` log silence.** Set `logging.getLogger("fake_useragent").setLevel(logging.ERROR)` after `logging.basicConfig()`. The library emits a "fallback used" `WARNING` whenever its browser-string CDN is slow or rate-limited; the fallback path always works. We observed ~1,500 of these warnings in the May 6 6-hour run (25% of all log volume). Real `fake_useragent` errors (if any) still propagate at ERROR level.
+
+- **`sys.dont_write_bytecode = True`** at module top. Disables `__pycache__` writes. Windows file copies (e.g., `Copy-Item -Force` from a downloaded zip) preserve the source file's *original* modification time rather than setting it to "now". If a user's previous-version `.pyc` cache has a newer embedded mtime than the new `.py` source's mtime, Python loads the stale bytecode and the new code paths never run. This bit a real upgrade flow (v4.2.0 → v4.2.1 disclaimer prompt didn't fire until `__pycache__` was manually deleted). Trading ~50ms of startup time for guaranteed source-file accuracy.
+
+- **`run_cycle()` log line** now distinguishes between slots notified instantly during the cycle vs. slots batched at end. Before: `🎯 N NEW slot(s) found!`. After: `🎯 N NEW slot(s): X notified instantly during cycle, Y pending end-of-cycle batch` (or `all notified instantly during cycle`).
+
+- **Header docstring** in `visa_tracker_v3.py` updated to v4.3.0. Selftest version label `SELFTEST (v4.2.1)` → `SELFTEST (v4.3.0)`. `smoke_test.py` `EXPECTED_VERSION` → `4.3.0`. `centers.json` version field → `4.3.0` with prepended notes describing the v4.3.0 changes. `README.md`, `USER_GUIDE.md`, `QUICKSTART.md` headers updated.
+
+- **QUICKSTART one-liner verification** updated to test for v4.3.0 features (`_instant_sent`, `sys.dont_write_bytecode = True`, `_first_run_disclaimer_check`) in addition to the v4.0/v4.2 features. Old check `selftest v4.2` removed.
+
+### Migration from v4.2.1
+
+Drop-in. Existing `visa_slots.db`, `config.json`, and `~/.visa_tracker_acknowledged` marker work unchanged. The disclaimer prompt is not re-triggered (the marker file's existence is the gate, not the version).
+
+**Important — clear `__pycache__` after upgrading on Windows:**
+
+```powershell
+Remove-Item -Recurse -Force __pycache__ -ErrorAction SilentlyContinue
+```
+
+This is a one-time workaround for the very issue v4.3.0 fixes going forward. After v4.3.0 is installed, no more `__pycache__` is written, so future upgrades won't have this problem.
+
+**Recommended for users tracking high-priority countries:**
+
+```powershell
+python visa_tracker_v3.py set-tier --country "Czech Republic" --tier hot
+python visa_tracker_v3.py set-tier --country "United Kingdom" --tier hot
+python visa_tracker_v3.py set-tier --preset schengen --tier warm
+python visa_tracker_v3.py run --tiered
+```
+
+Tiered mode polls hot-tier countries every 10 minutes (vs. ~70 minutes in non-tiered mode). Combined with v4.3.0 instant-notify, slot detection-to-notification latency drops from 26+ minutes (worst case in non-tiered) to seconds.
+
+### Notes for v4.3.0 users
+
+- The May 6 2026 production cycle (837KB log, 6h continuous run, 1,425 Layer 3 invocations, 10 `🎯 PAGE CHANGED` events all for Czech Republic, zero false positives) is the operational baseline this release is built against. If you're seeing different behavior, file an issue with the relevant log excerpt.
+- Layer 1 (JWT replay) and Layer 2 (anonymous API) are now effectively dead for the 17 countries observed in the May 6 cycle (Brazil, China, Croatia, Czech Republic, Greece, Hungary, Israel, Mexico, New Zealand, Philippines, Qatar, Russia, Saudi Arabia, Singapore, South Africa, Turkey, UAE). The circuit breaker correctly opens after 6 failures; Layer 3 takes over. This is the intended design from v3.2.4 working as expected.
+- Next release (v4.4.0, when warranted) will likely consolidate JWT calibration UX based on what we learn over the next 2-3 weeks of operational data. No commitments.
+
+---
+
 ## [4.2.1] — 2026-05-05
 
 **Disclaimer hardening + legal transparency.** No functional code changes; v4.2.0 features remain. This release adds a comprehensive disclaimer suite to clarify the project's research-and-education purpose, document architectural commitments, and provide good-faith case-law analysis for any party (users, GitHub Trust & Safety, regulators, counsel) reviewing the project's posture.

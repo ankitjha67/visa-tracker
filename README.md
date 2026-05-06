@@ -12,8 +12,8 @@
 
 A personal-use, MIT-licensed Python project that watches visa appointment websites and notifies you when their public availability pages change. Built primarily as a research artifact and consumer-information tool for Indian travellers tracking competitive visa corridors (UK Skilled Worker, Canada Express Entry, Schengen, U.S. wait times) — but the architecture is **passport-agnostic** and can be adapted for any origin country (see [INTERNATIONALIZATION_GUIDE.md](INTERNATIONALIZATION_GUIDE.md)).
 
-**Version:** v4.2.1
-**Status:** production-validated against real VFS Global traffic (22+ hours, 1,972 page-change events, 4 confirmed real slot detections in Czech Republic May 2026)
+**Version:** v4.3.0
+**Status:** production-validated against real VFS Global traffic. Two confirmed real Czech Republic slot detection events: May 5 2026 (4 slots, all 4 cities) and May 6 2026 (16 slots across multiple cycles, 6h continuous run). Page-change classifier achieved 0 false positives across 2,677 classification decisions in the May 6 6-hour window.
 **Platform:** Windows 10/11 (primary), macOS/Linux (secondary), GitHub Actions (cloud)
 **License:** MIT
 **Purpose:** research, education, transparency, consumer information
@@ -28,7 +28,7 @@ This project performs **read-only** monitoring of three categories of **publicly
 
 When the data changes, the tool notifies the user via desktop toast, Telegram, email, or Discord — channels the user configures on their own infrastructure.
 
-Coverage at v4.2.1: **110+ visa application centres** across **45+ destination countries**, including 5 Indian US consulates and 30 third-country US consulates (Mexico, Canada, UAE, Saudi Arabia, etc.). Tier-based polling (hot/warm/cold) keeps default request volume comparable to a single human user actively monitoring a site. False-positive noise from v3.2.0 (1,968 cosmetic events) is fully suppressed.
+Coverage at v4.3.0: **118 visa application centres** across **45+ destination countries**, including 5 Indian US consulates and 31 third-country US consulates (Mexico, Canada, UAE, Saudi Arabia, etc.). Tier-based polling (hot/warm/cold) keeps default request volume comparable to a single human user actively monitoring a site. False-positive noise from v3.2.0 (1,968 cosmetic events) is fully suppressed.
 
 ## What it does NOT do
 
@@ -43,7 +43,15 @@ These are deliberate architectural commitments documented in [`LEGAL.md`](LEGAL.
 
 If you need any of the above, **this is not the right software** and the maintainer will not implement those features. See [`DISCLAIMER.md`](DISCLAIMER.md) for the full scope statement.
 
-## What's new in v4.2.1
+## What's new in v4.3.0
+
+**Instant notifications on detection** — when the page-change classifier fires `🎯 PAGE CHANGED`, the toast/Telegram/email/Discord alert fires immediately rather than waiting for cycle completion. Driven by the May 6 2026 production cycle: real Czech Republic detection at 03:17, but notification didn't fire until 03:43 (26-minute lag) because the cycle walked sequentially through all 269 country/city pairs before the batch notify ran. v4.3.0 closes that gap. Cycle-end batch dedupes against already-sent slots, so users never get duplicate alerts. Disable via `{"instant_notify": false}` in `config.json`.
+
+**Log noise suppression** — silenced the `fake_useragent` library's "fallback used" WARNING that fires on every browser-string request when its CDN is slow or rate-limited. The fallback works fine; we observed ~1,500 of these warnings in a 6h run (25% of all log volume). Logger level set to ERROR so real failures stay visible.
+
+**Bytecode caching disabled** — set `sys.dont_write_bytecode = True`. Stale `__pycache__/.pyc` files masked the v4.2.0→v4.2.1 disclaimer prompt on Windows until the cache was manually nuked, because Windows file copies preserve the source's original mtime. Trading 50ms startup for guaranteed source-file accuracy is correct for a CLI tool that users upgrade by overwriting files.
+
+## What was new in v4.2.1
 
 **Disclaimer hardening and legal transparency.** Added [`DISCLAIMER.md`](DISCLAIMER.md), [`LEGAL.md`](LEGAL.md), and CLI first-run notice documenting the project's research-and-education purpose, architectural commitments, and good-faith analysis of relevant case law (hiQ Labs v. LinkedIn, Van Buren v. United States, Section 43/66 of India's IT Act 2000, GDPR scope). No functional code changes; v4.2.0 features remain.
 

@@ -1,6 +1,37 @@
 #!/usr/bin/env python3
 """
-Visa Slot Tracker v4.2.1 — Disclaimer hardening + legal transparency + internationalization
+Visa Slot Tracker v4.3.0 — Instant notifications + log noise suppression
+
+v4.3.0 acts on findings from the May 6 2026 production cycle (real Czech
+Republic detection, 16 slots) where notifications fired 26 minutes after
+the actual page-change event because the cycle walked sequentially through
+all 269 country/city pairs before the batch notify ran. v4.3.0 ships:
+
+  • Instant notification on detection — when a target produces new slots,
+    the toast/Telegram/email/Discord alert fires immediately rather than
+    waiting for cycle end. Cycle-end batch dedupes against already-sent
+    slots so users never get duplicate alerts. Disable via
+    `{"instant_notify": false}` in config.json. Default is on.
+  • fake_useragent log silence — the library emits a "fallback used"
+    WARNING on every browser-string request when its CDN is slow or
+    rate-limited. The fallback works fine; we observed ~1,500 of these
+    warnings per 6h run (25% of all log volume). Set the logger level
+    to ERROR to suppress the cosmetic chatter while keeping real errors
+    visible.
+  • sys.dont_write_bytecode = True — disables __pycache__ writes. Stale
+    .pyc bytecode masked the v4.2.0→v4.2.1 disclaimer prompt on Windows
+    until __pycache__ was manually nuked. Trading 50ms startup for
+    guaranteed source-file accuracy is correct for a CLI tool that users
+    upgrade by overwriting files.
+
+v4.2.1 — Disclaimer hardening + legal transparency
+
+v4.2.1 was a defensive update. No functional code changes; v4.2.0 features
+remained. Comprehensive disclaimer suite: DISCLAIMER.md (user-facing scope),
+LEGAL.md (case-law-anchored posture: hiQ, Van Buren, Sandvig, Power Ventures,
+3Taps, Feist, 17 USC 105, IT Act 43/66, GDPR, CMA), README banner, CLI
+first-run prompt with ~/.visa_tracker_acknowledged marker. Auto-skips for
+--help, CI envs, VISA_TRACKER_NO_PROMPT=1.
 
 v4.2.0 expansions:
   • Extended USStateDeptProcessor to 30+ US consulates worldwide (Mexico,
@@ -165,6 +196,17 @@ import hashlib
 import sqlite3
 import os
 import sys
+
+# v4.3.0 — disable bytecode caching to prevent stale __pycache__/.pyc files
+# from masking new code paths after a version upgrade. Windows file copies
+# preserve the source's original mtime, which can cause Python to load a
+# previous version's bytecode even after the .py source has been replaced.
+# This bit a real user upgrading v4.2.0 → v4.2.1 (the new disclaimer prompt
+# never fired until __pycache__ was manually nuked). Trading a small startup
+# cost (~50ms) for guaranteed source-file accuracy is correct for a CLI tool
+# that the user upgrades by overwriting files.
+sys.dont_write_bytecode = True
+
 import signal
 import random
 import re
@@ -275,6 +317,15 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger("tracker")
+
+# v4.3.0 — silence fake_useragent's chatty fallback warnings.
+# The library tries to fetch a fresh browser-string list at every call and
+# warns when it can't (offline, rate-limited, CDN slow). The fallback path
+# always works fine. In a typical 6h run we observed ~1,500 of these
+# warnings — 25% of total log volume — and they tell the user nothing
+# actionable. Setting the logger level to ERROR keeps real errors visible
+# but suppresses the cosmetic fallback chatter.
+logging.getLogger("fake_useragent").setLevel(logging.ERROR)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3446,6 +3497,25 @@ class VisaTracker:
 
             await asyncio.sleep(random.uniform(2, 5))
 
+        # v4.3.0 — instant notification.
+        # In v4.2.x and earlier, notifications fired only at end of cycle.
+        # When we ran the May 6 2026 production cycle, Czech Republic was
+        # detected at 03:17 but the toast didn't fire until 03:43 — a 26-min
+        # lag while the cycle walked through every other country. For a
+        # competitive slot this is too slow. v4.3.0 fires the notification
+        # the moment a target produces new slots; the cycle-end batch then
+        # skips slots already notified to avoid duplicate alerts.
+        # Disable via config: {"instant_notify": false}
+        if new_slots and self.config.get("instant_notify", True):
+            try:
+                await loop.run_in_executor(None, self.notifier.send, new_slots)
+                # Mark these so cycle-end batch doesn't re-notify
+                for s in new_slots:
+                    s._instant_sent = True
+            except Exception as e:
+                log.error(f"  ❌ Instant notification failed for {country}: {e}")
+                # Don't mark as sent — let cycle-end batch retry
+
         return new_slots
 
     async def run_cycle(self) -> list[SlotInfo]:
@@ -3461,9 +3531,21 @@ class VisaTracker:
             all_new.extend(result)
 
         if all_new:
-            log.info(f"🎯 {len(all_new)} NEW slot(s) found!")
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self.notifier.send, all_new)
+            # v4.3.0 — skip slots already notified instantly during the cycle
+            pending = [s for s in all_new if not getattr(s, '_instant_sent', False)]
+            instant_count = len(all_new) - len(pending)
+
+            if instant_count > 0 and pending:
+                log.info(f"🎯 {len(all_new)} NEW slot(s): {instant_count} notified "
+                        f"instantly during cycle, {len(pending)} pending end-of-cycle batch")
+            elif instant_count > 0:
+                log.info(f"🎯 {len(all_new)} NEW slot(s) — all notified instantly during cycle")
+            else:
+                log.info(f"🎯 {len(all_new)} NEW slot(s) found!")
+
+            if pending:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, self.notifier.send, pending)
             if self.server:
                 await self.server.broadcast("new_slots", {
                     "slots": [s.to_dict() for s in all_new],
@@ -3911,7 +3993,7 @@ def _first_run_disclaimer_check():
     try:
         marker_path.write_text(
             f"acknowledged at {datetime.now().isoformat()}\n"
-            f"version: 4.2.1\n"
+            f"version: 4.3.0\n"
             f"see DISCLAIMER.md and LEGAL.md in the repository\n"
         )
     except Exception as e:
@@ -4243,7 +4325,7 @@ def main():
                 print(f"  ✗ {name}  →  {str(e)[:200]}")
 
         print("\n" + "="*60)
-        print("  VISA TRACKER — SELFTEST (v4.2.1)")
+        print("  VISA TRACKER — SELFTEST (v4.3.0)")
         print("="*60)
 
         # 1. Registry loads
@@ -4432,7 +4514,7 @@ def main():
             print("="*60 + "\n")
             sys.exit(1)
         else:
-            print(f"\n  ✓ All checks passed — v4.2.1 is wired up correctly.")
+            print(f"\n  ✓ All checks passed — v4.3.0 is wired up correctly.")
             print(f"  Next: `python visa_tracker_v3.py verify-urls` then calibrate.")
             print("="*60 + "\n")
 
