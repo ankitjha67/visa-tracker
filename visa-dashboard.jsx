@@ -1,5 +1,16 @@
 /**
- * Visa Slot Tracker — Dashboard v3.2.1
+ * Visa Slot Tracker — Dashboard v4.4.0
+ *
+ * v4.4.0 changes vs v3.2.1:
+ *   - Processor labels now cover BOTH the short portal codes the backend
+ *     writes into check rows ("vfs", "bls", "us_state_dept", "page_change")
+ *     and the full processor ids used in demo mode — real data used to
+ *     render raw codes because only full ids were mapped.
+ *   - Method badge for the US wait-time layer (us_wait_time /
+ *     us_wait_time_drop).
+ *   - Backend timestamps are now valid RFC3339 (the old "+00:00Z" suffix
+ *     made every `new Date(found_at)` here Invalid Date — sorting and
+ *     "found Xs ago" were broken for real data).
  *
  * Standalone React component. Drop into Vite/Next/CRA, or render directly via
  * Babel-standalone for a no-build setup.
@@ -84,6 +95,7 @@ const CONF_TOKENS = {
 };
 
 const PROCESSOR_LABEL = {
+  // Full processor ids (registry / demo mode)
   vfs_global: "VFS",
   bls_international: "BLS",
   tls_contact: "TLS",
@@ -91,6 +103,16 @@ const PROCESSOR_LABEL = {
   ckgs: "CKGS",
   embassy_direct: "Embassy",
   indian_visa_online: "IVO",
+  us_state_dept: "US",
+  // Short portal codes the backend writes into check/slot rows
+  vfs: "VFS",
+  bls: "BLS",
+  tls: "TLS",
+  cgi: "CGI",
+  embassy: "Embassy",
+  ivo: "IVO",
+  page_change: "Page",
+  "Page Monitor": "Page",
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -411,6 +433,8 @@ function MethodBadge({ method }) {
     api: { label: "API", cls: "text-sky-300 bg-sky-500/10 border-sky-500/30" },
     page_change: { label: "Page", cls: "text-zinc-400 bg-zinc-800/60 border-zinc-700" },
     scrape: { label: "DOM", cls: "text-amber-300 bg-amber-500/10 border-amber-500/30" },
+    us_wait_time: { label: "US Wait", cls: "text-indigo-300 bg-indigo-500/10 border-indigo-500/30" },
+    us_wait_time_drop: { label: "US Drop", cls: "text-indigo-300 bg-indigo-500/10 border-indigo-500/30" },
     none: { label: "—", cls: "text-zinc-500" },
   };
   const cfg = map[method] || { label: method, cls: "text-zinc-400 bg-zinc-800/60 border-zinc-700" };
@@ -940,7 +964,7 @@ export default function VisaDashboard() {
             </div>
             <div>
               <div className="text-sm font-semibold tracking-tight">Visa Slot Tracker</div>
-              <div className="text-[11px] text-zinc-500 font-mono">v3.2.1</div>
+              <div className="text-[11px] text-zinc-500 font-mono">v4.4.0</div>
             </div>
           </div>
           <div className="ml-auto">

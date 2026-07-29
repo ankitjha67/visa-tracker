@@ -30,7 +30,8 @@ CYAN  = "\033[96m"
 GRAY  = "\033[90m"
 RESET = "\033[0m"
 
-EXPECTED_VERSION = "4.3.0"
+EXPECTED_VERSION = "4.4.0"
+EXPECTED_SELFTEST_CHECKS = 15  # v4.4.0 added 5 regression checks (was 10)
 
 def color(text, c):
     return f"{c}{text}{RESET}"
@@ -138,9 +139,9 @@ def main():
         failed.append(("4/7", str(e)))
 
     # ------------------------------------------------------------------
-    # Stage 5: selftest 10/10
+    # Stage 5: selftest
     # ------------------------------------------------------------------
-    stage_header(5, total, "selftest (10 offline integration checks)")
+    stage_header(5, total, f"selftest ({EXPECTED_SELFTEST_CHECKS} offline integration checks)")
     try:
         result = subprocess.run(
             [sys.executable, "visa_tracker_v3.py", "selftest"],
@@ -152,12 +153,12 @@ def main():
         if "All checks passed" in result.stdout:
             passed_marks -= 1  # don't double-count summary
         failed_marks = result.stdout.count("✗") + result.stdout.count("FAIL")
-        if failed_marks > 0 or passed_marks < 10 or result.returncode != 0:
+        if failed_marks > 0 or passed_marks < EXPECTED_SELFTEST_CHECKS or result.returncode != 0:
             raise RuntimeError(
-                f"selftest passed {passed_marks}/10, failed {failed_marks}, "
-                f"exit code {result.returncode}"
+                f"selftest passed {passed_marks}/{EXPECTED_SELFTEST_CHECKS}, "
+                f"failed {failed_marks}, exit code {result.returncode}"
             )
-        ok(f"{passed_marks}/10 checks passed")
+        ok(f"{passed_marks}/{EXPECTED_SELFTEST_CHECKS} checks passed")
     except subprocess.TimeoutExpired:
         fail("selftest exceeded 60s timeout")
         failed.append(("5/7", "timeout"))

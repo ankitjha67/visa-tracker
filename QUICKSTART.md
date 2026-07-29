@@ -1,4 +1,4 @@
-# Quickstart — Visa Slot Tracker (current: v4.3.0)
+# Quickstart — Visa Slot Tracker (current: v4.4.0)
 
 Technical quick reference for developers. **For non-technical setup, read `USER_GUIDE.md` instead** — plain English walkthrough.
 
@@ -159,7 +159,7 @@ Read at `Notifier.__init__` time. Required for GitHub Actions where secrets can'
 ```
 visa-tracker-v4/
 ├── visa_tracker_v3.py        # ~4,350 lines (v4.0 patches on v3.2.4 base)
-├── centers.json              # v4.3.0 — 118 centers (incl. 36 US consulates), 8 processors
+├── centers.json              # v4.4.0 — 118 centers (incl. 36 US consulates), 8 processors
 ├── requirements.txt          # pinned deps incl. windows-toasts
 ├── smoke_test.py             # 7-stage end-to-end verification
 ├── smoke_test.ps1            # PowerShell wrapper
@@ -238,7 +238,7 @@ See `VISA_FREE_GUIDE.md` for full flag reference.
 ## Verify v4.0 features are wired
 
 ```powershell
-python -c "src=open('visa_tracker_v3.py', encoding='utf-8').read(); checks=[('tiered scheduler', 'run_monitor_tiered' in src), ('--tiered flag', '--tiered' in src), ('setup-telegram', '_cmd_setup_telegram' in src), ('select-countries', '_cmd_select_countries' in src), ('set-tier', '_cmd_set_tier' in src), ('TELEGRAM env', 'TELEGRAM_BOT_TOKEN' in src), ('country presets', '_COUNTRY_PRESETS' in src), ('priority queue', 'heappush' in src and 'heappop' in src), ('US processor', 'USStateDeptProcessor' in src), ('disclaimer prompt', '_first_run_disclaimer_check' in src), ('instant notify (v4.3)', '_instant_sent' in src), ('bytecode cache disabled (v4.3)', 'sys.dont_write_bytecode = True' in src), ('selftest v4.3', 'SELFTEST (v4.3.0)' in src)]; [print(f'  {chr(10003) if v else chr(10007)} {k}') for k,v in checks]"
+python -c "src=open('visa_tracker_v3.py', encoding='utf-8').read(); checks=[('tiered scheduler', 'run_monitor_tiered' in src), ('--tiered flag', '--tiered' in src), ('setup-telegram', '_cmd_setup_telegram' in src), ('select-countries', '_cmd_select_countries' in src), ('set-tier', '_cmd_set_tier' in src), ('TELEGRAM env', 'TELEGRAM_BOT_TOKEN' in src), ('country presets', '_COUNTRY_PRESETS' in src), ('priority queue', 'heappush' in src and 'heappop' in src), ('US processor', 'USStateDeptProcessor' in src), ('disclaimer prompt', '_first_run_disclaimer_check' in src), ('instant notify (v4.3)', '_instant_sent' in src), ('bytecode cache disabled (v4.3)', 'sys.dont_write_bytecode = True' in src), ('version 4.4', chr(95)*2+'version'+chr(95)*2+' = '+chr(34)+'4.4.0'+chr(34) in src), ('wait_times table (v4.4)', 'wait_times' in src), ('webhook channel (v4.4)', '_send_webhook' in src), ('doctor cmd (v4.4)', '_cmd_doctor' in src), ('export cmd (v4.4)', '_cmd_export' in src), ('RFC3339 timestamps (v4.4)', 'utc_now_iso' in src)]; [print(f'  {chr(10003) if v else chr(10007)} {k}') for k,v in checks]"
 ```
 
 All 9 should print `✓`.

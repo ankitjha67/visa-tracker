@@ -40,7 +40,8 @@ jobs:
         run: |
           pip install requests
           python -c "
-          import os, requests, sqlite3, datetime, sys
+          import os, requests, sqlite3, sys
+          from datetime import datetime, timedelta, timezone
 
           token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
           chat = os.environ.get('TELEGRAM_CHAT_ID', '')
@@ -48,19 +49,27 @@ jobs:
               print('No Telegram credentials configured; skipping ping.')
               sys.exit(0)
 
-          # Attempt to read DB stats for a richer ping
+          now = datetime.now(timezone.utc)
+          # v4.4.0 fix: the tracker stores ISO-8601 'YYYY-MM-DDTHH:MM:SSZ'
+          # strings; sqlite's datetime('now') emits 'YYYY-MM-DD HH:MM:SS'
+          # (space separator), so the old string comparison was fuzzy. Also
+          # the slots table has an 'expired' flag, NOT an 'expires_at'
+          # column — that query raised OperationalError every single day and
+          # the ping always reported '(could not read DB: ...)'.
+          cutoff_24h = (now - timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%S')
+
           summary_lines = ['🤖 Visa Tracker Daily Healthcheck']
-          summary_lines.append(f'Time: {datetime.datetime.utcnow().isoformat()}Z')
+          summary_lines.append('Time: ' + now.strftime('%Y-%m-%dT%H:%M:%SZ'))
 
           if os.path.exists('visa_slots.db'):
               try:
                   con = sqlite3.connect('visa_slots.db')
                   cur = con.cursor()
-                  cur.execute('SELECT COUNT(*) FROM checks WHERE checked_at > datetime(\"now\", \"-24 hours\")')
+                  cur.execute('SELECT COUNT(*) FROM checks WHERE checked_at > ?', (cutoff_24h,))
                   recent_checks = cur.fetchone()[0]
-                  cur.execute('SELECT COUNT(*) FROM slots WHERE expires_at > datetime(\"now\")')
+                  cur.execute('SELECT COUNT(*) FROM slots WHERE expired = 0')
                   active_slots = cur.fetchone()[0]
-                  cur.execute('SELECT COUNT(*) FROM checks WHERE status = \"error\" AND checked_at > datetime(\"now\", \"-24 hours\")')
+                  cur.execute(\"SELECT COUNT(*) FROM checks WHERE status = 'error' AND checked_at > ?\", (cutoff_24h,))
                   errors_24h = cur.fetchone()[0]
                   con.close()
 
@@ -75,7 +84,7 @@ jobs:
           summary_lines.append('')
           summary_lines.append('If you stop seeing these daily, the cron is broken.')
 
-          requests.post(
+          r = requests.post(
               f'https://api.telegram.org/bot{token}/sendMessage',
               json={
                   'chat_id': chat,
@@ -83,5 +92,8 @@ jobs:
               },
               timeout=10,
           )
+          if r.status_code != 200:
+              print(f'Telegram send failed: HTTP {r.status_code} {r.text[:200]}')
+              sys.exit(1)
           print('Healthcheck ping sent.')
           "

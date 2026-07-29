@@ -1,4 +1,4 @@
-# Visa Slot Tracker v3.2.3 — Python dependencies
+# Visa Slot Tracker v4.4.0 — Python dependencies
 # Tested against Python 3.10, 3.11, 3.12, 3.13, 3.14 on Windows 11.
 #
 # Install with:

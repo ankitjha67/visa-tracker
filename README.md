@@ -12,7 +12,7 @@
 
 A personal-use, MIT-licensed Python project that watches visa appointment websites and notifies you when their public availability pages change. Built primarily as a research artifact and consumer-information tool for Indian travellers tracking competitive visa corridors (UK Skilled Worker, Canada Express Entry, Schengen, U.S. wait times) — but the architecture is **passport-agnostic** and can be adapted for any origin country (see [INTERNATIONALIZATION_GUIDE.md](INTERNATIONALIZATION_GUIDE.md)).
 
-**Version:** v4.3.0
+**Version:** v4.4.0
 **Status:** production-validated against real VFS Global traffic. Two confirmed real Czech Republic slot detection events: May 5 2026 (4 slots, all 4 cities) and May 6 2026 (16 slots across multiple cycles, 6h continuous run). Page-change classifier achieved 0 false positives across 2,677 classification decisions in the May 6 6-hour window.
 **Platform:** Windows 10/11 (primary), macOS/Linux (secondary), GitHub Actions (cloud)
 **License:** MIT
@@ -26,9 +26,9 @@ This project performs **read-only** monitoring of three categories of **publicly
 2. **Anonymous availability endpoints** that issue tokens to any visitor without requiring login or account creation.
 3. **U.S. Department of State public wait-time data** at `travel.state.gov` — federal government data that, under 17 U.S.C. § 105, is statutorily in the public domain.
 
-When the data changes, the tool notifies the user via desktop toast, Telegram, email, or Discord — channels the user configures on their own infrastructure.
+When the data changes, the tool notifies the user via desktop toast, Telegram, email, Discord, or a generic JSON webhook (v4.4.0) — channels the user configures on their own infrastructure.
 
-Coverage at v4.3.0: **118 visa application centres** across **45+ destination countries**, including 5 Indian US consulates and 31 third-country US consulates (Mexico, Canada, UAE, Saudi Arabia, etc.). Tier-based polling (hot/warm/cold) keeps default request volume comparable to a single human user actively monitoring a site. False-positive noise from v3.2.0 (1,968 cosmetic events) is fully suppressed.
+Coverage at v4.4.0: **118 visa application centres** across **45+ destination countries**, including 5 Indian US consulates and 31 third-country US consulates (Mexico, Canada, UAE, Saudi Arabia, etc.). Tier-based polling (hot/warm/cold) keeps default request volume comparable to a single human user actively monitoring a site. False-positive noise from v3.2.0 (1,968 cosmetic events) is fully suppressed.
 
 ## What it does NOT do
 
@@ -43,7 +43,19 @@ These are deliberate architectural commitments documented in [`LEGAL.md`](LEGAL.
 
 If you need any of the above, **this is not the right software** and the maintainer will not implement those features. See [`DISCLAIMER.md`](DISCLAIMER.md) for the full scope statement.
 
-## What's new in v4.3.0
+## What's new in v4.4.0
+
+**US wait-time tracking actually works now.** A full-code audit found the v4.1.0 wait-time persistence layer referenced database columns that never existed — every baseline write failed silently, so a US wait-time drop alert could never fire across all 36 US consulate centers. v4.4.0 fixes the persistence (dedicated `wait_times` table), parses state.gov's real table layout (the old regex matched nothing on it), and merges all 36 consulate cities into one monitored target (previously only the first — Mumbai — was tracked).
+
+**Dashboard backend fixed** — `server` / `run --server` crashed on startup since v3.x (`aiohttp.web` was never importable the way it was referenced), and every stored timestamp was malformed (`+00:00Z`) so the dashboard showed *Invalid Date* everywhere. Both fixed; the HTTP API gained `GET /api/wait-times` and version reporting on `/api/health`.
+
+**Alert delivery hardening** — Telegram messages are now chunked under the API's 4,096-char limit (8+ slot alerts used to be silently dropped with a fake "sent" log), HTML-escaped, and every send is verified against the API response. New **generic webhook channel** (`ntfy`, Slack, Home Assistant, n8n…). Tiered mode now honors `instant_notify`. Slots get marked `notified` in the DB after dispatch.
+
+**New tooling** — `wait-times` (live US consulate wait-time table), `export` (CSV/JSON dumps), `doctor` (environment diagnostics with `--network` probes), `version`. Selftest grew from 10 to 15 checks — one regression guard per fixed bug.
+
+See [CHANGELOG.md](CHANGELOG.md) for the complete list including the healthcheck-workflow SQL fix, per-country JWT caching, and pip < 23 bootstrap compatibility.
+
+## What was new in v4.3.0
 
 **Instant notifications on detection** — when the page-change classifier fires `🎯 PAGE CHANGED`, the toast/Telegram/email/Discord alert fires immediately rather than waiting for cycle completion. Driven by the May 6 2026 production cycle: real Czech Republic detection at 03:17, but notification didn't fire until 03:43 (26-minute lag) because the cycle walked sequentially through all 269 country/city pairs before the batch notify ran. v4.3.0 closes that gap. Cycle-end batch dedupes against already-sent slots, so users never get duplicate alerts. Disable via `{"instant_notify": false}` in `config.json`.
 

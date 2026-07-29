@@ -1,6 +1,54 @@
 #!/usr/bin/env python3
 """
-Visa Slot Tracker v4.3.0 — Instant notifications + log noise suppression
+Visa Slot Tracker v4.4.0 — US wait-time tracking repaired + hardening + new tooling
+
+v4.4.0 is a bug-fix and capability release driven by a full-code audit:
+
+  • FIXED: US wait-time persistence was 100% broken since v4.1.0. The
+    USStateDeptProcessor read/wrote `slots.id`, `slots.metadata`, and
+    `slots.expires_at` — columns that have never existed in the schema
+    (the table has `uid`, no metadata, and an `expired` flag). Every
+    baseline write failed silently, `prev` was always None, and a US
+    wait-time drop alert could NEVER fire across all 36 US consulate
+    centers. v4.4.0 adds a dedicated `wait_times` table (proper lock +
+    WAL usage) and round-trips numeric and status values as JSON.
+  • FIXED: `server` / `run --server` crashed on startup with
+    AttributeError: module 'aiohttp' has no attribute 'web' — the code
+    used `aiohttp.web.*` but only `import aiohttp` was performed. The
+    web submodule is now imported explicitly.
+  • FIXED: every stored timestamp ended in "+00:00Z" (isoformat already
+    appends the UTC offset; the code appended a literal "Z" on top).
+    JavaScript's `new Date()` rejects that form, so the dashboard showed
+    "Invalid Date" / broken sorting for every slot. New `utc_now_iso()`
+    helper emits proper RFC3339 ("2026-07-29T16:09:32Z").
+  • FIXED: Telegram alerts over ~4096 chars (≈8+ slots) were rejected by
+    the Bot API and silently dropped — the code logged "Telegram sent"
+    without checking the response. Messages are now chunked under the
+    limit, HTML-escaped, and each API response is verified.
+  • FIXED: default targets collapsed all 36 "United States" consulate
+    centers into one (first-seen city only). Cities are now merged per
+    (country, processor), so all US consulates are actually monitored.
+  • FIXED: state.gov wait-time parsing now understands the real HTML
+    table layout (city rows × visa-category header columns) instead of
+    only the label-adjacent-to-value regex, which matched nothing on a
+    standard table. Regex path retained as fallback.
+  • Tiered mode now honors instant_notify (v4.3.0 shipped instant
+    alerts only in the plain cycle runner).
+  • VFS JWT cache is per-country (was: single global token, so every
+    country switch re-harvested via a fresh Selenium session).
+  • Slots are marked notified=1 in the DB after a successful dispatch.
+  • Desktop toasts are skipped in CI environments (no notify-send).
+  • New CLI: `wait-times` (live US consulate wait-time table),
+    `export` (slots/checks → JSON/CSV), `doctor` (environment
+    diagnostics: deps, Chrome, config, DB integrity).
+  • New notification channel: generic `webhook` (POSTs a JSON payload —
+    works with ntfy, Slack incoming webhooks, Home Assistant, etc.).
+  • New server endpoint: GET /api/wait-times.
+  • Cleanups: dead imports removed (pickle, urljoin, Any), explicit
+    selenium exception imports, page-hash preview cap aligned with the
+    delta window (12000), pip bootstrap works on pip < 23
+    (--break-system-packages made conditional), SIGINT now shuts the
+    executor down cleanly.
 
 v4.3.0 acts on findings from the May 6 2026 production cycle (real Czech
 Republic detection, 16 slots) where notifications fired 26 minutes after
@@ -185,6 +233,9 @@ Run:
     python visa_tracker_v3.py status             # Diagnostic snapshot
     python visa_tracker_v3.py coverage           # Show registry coverage
     python visa_tracker_v3.py list-countries     # List all supported countries
+    python visa_tracker_v3.py wait-times         # NEW v4.4.0: live US consulate wait times
+    python visa_tracker_v3.py export --format csv # NEW v4.4.0: export slots/checks
+    python visa_tracker_v3.py doctor             # NEW v4.4.0: environment diagnostics
 """
 
 import asyncio
@@ -210,17 +261,30 @@ sys.dont_write_bytecode = True
 import signal
 import random
 import re
-import pickle
 import traceback
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from dataclasses import dataclass, field, asdict
-from typing import Optional, Any
+from dataclasses import dataclass, asdict
+from html import escape as html_escape
+from typing import Optional
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse
+
+__version__ = "4.4.0"
+
+
+def utc_now_iso() -> str:
+    """RFC3339 UTC timestamp, e.g. '2026-07-29T16:09:32Z'.
+
+    v4.4.0 fix: the previous idiom `datetime.now(tz=utc).isoformat() + "Z"`
+    produced '...+00:00Z' — isoformat() already appends the offset, so the
+    extra Z made the string unparseable for JavaScript's Date() (dashboard
+    showed 'Invalid Date' for every slot) and for strict RFC3339 parsers.
+    """
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  DEPENDENCY BOOTSTRAP
@@ -246,10 +310,21 @@ def bootstrap():
             missing.append(pkg)
     if missing:
         print(f"[setup] Installing: {', '.join(missing)}")
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install"] + missing +
-            ["--break-system-packages", "-q"]
-        )
+        base_cmd = [sys.executable, "-m", "pip", "install", "-q"] + missing
+        try:
+            # Plain install first — works everywhere pip works.
+            subprocess.check_call(base_cmd)
+        except subprocess.CalledProcessError:
+            # PEP 668 "externally managed environment" (Debian/Ubuntu system
+            # Python) rejects plain installs; retry with the override flag.
+            # Doing it this way round keeps pip < 23.0 working too, where
+            # --break-system-packages doesn't exist and would itself error.
+            try:
+                subprocess.check_call(base_cmd + ["--break-system-packages"])
+            except subprocess.CalledProcessError as e:
+                print(f"[setup] Automatic install failed ({e}).")
+                print(f"[setup] Install manually:  {sys.executable} -m pip install {' '.join(missing)}")
+                sys.exit(1)
 
 bootstrap()
 
@@ -287,15 +362,20 @@ warnings.filterwarnings("ignore", message=r".*charset_normalizer.*doesn't match.
 
 import requests
 from bs4 import BeautifulSoup
-import aiohttp
+# v4.4.0 fix: aiohttp does NOT expose .web from a bare `import aiohttp` —
+# every aiohttp.web.* reference in the Server class raised AttributeError,
+# so `server` and `run --server` crashed on startup. Import it explicitly.
+from aiohttp import web as aiohttp_web
 import websockets
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait, Select
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import *
+from selenium.common.exceptions import (
+    StaleElementReferenceException,
+    ElementClickInterceptedException,
+    ElementNotInteractableException,
+)
 
 try:
     from fake_useragent import UserAgent
@@ -348,7 +428,7 @@ class SlotInfo:
 
     def __post_init__(self):
         if not self.found_at:
-            self.found_at = datetime.now(tz=__import__("datetime").timezone.utc).isoformat() + "Z"
+            self.found_at = utc_now_iso()
 
     @property
     def uid(self) -> str:
@@ -375,7 +455,7 @@ class CheckResult:
 
     def __post_init__(self):
         if not self.checked_at:
-            self.checked_at = datetime.now(tz=__import__("datetime").timezone.utc).isoformat() + "Z"
+            self.checked_at = utc_now_iso()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -425,6 +505,11 @@ class Database:
                 CREATE TABLE IF NOT EXISTS sessions (
                     portal TEXT PRIMARY KEY,
                     cookies TEXT,
+                    updated_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS wait_times (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
                     updated_at TEXT
                 );
                 CREATE TABLE IF NOT EXISTS calibration (
@@ -530,7 +615,7 @@ class Database:
                       consecutive_changes: Optional[int] = None,
                       mark_change: bool = False):
         """v3.2.2: also persists noise tracking. Backward-compatible signature."""
-        now = datetime.now(tz=__import__("datetime").timezone.utc).isoformat()+"Z"
+        now = utc_now_iso()
         with self._lock:
             conn = self._conn()
             # Read current consecutive_changes if not given
@@ -549,14 +634,16 @@ class Database:
                     "SELECT last_change_at FROM page_hashes WHERE key=?", (key,)
                 ).fetchone()
                 last_change_at = row[0] if row else None
-            # v3.2.2: store up to 5000 chars of preview (was 500) so delta
-            # classifier has real text to diff against next time.
+            # v4.4.0: preview cap raised 5000 → 12000 to match the delta
+            # window in _compute_delta. With a 5000-char baseline, any page
+            # text between 5000 and 12000 chars showed up as "added" lines
+            # on every genuine hash change, inflating the delta.
             conn.execute("""
                 INSERT OR REPLACE INTO page_hashes
                 (key, hash, last_checked, content_preview,
                  consecutive_changes, last_change_at)
                 VALUES (?,?,?,?,?,?)
-            """, (key, h, now, preview[:5000],
+            """, (key, h, now, preview[:12000],
                   consecutive_changes, last_change_at))
             conn.commit()
             conn.close()
@@ -585,7 +672,7 @@ class Database:
                 json.dumps(data.get("api_endpoints", [])),
                 1 if data.get("login_required") else 0,
                 json.dumps(data.get("page_structure", {})),
-                datetime.now(tz=__import__("datetime").timezone.utc).isoformat()+"Z",
+                utc_now_iso(),
                 data.get("notes", ""),
                 data.get("confidence", "medium"),
             ))
@@ -621,7 +708,72 @@ class Database:
             conn.execute("""
                 INSERT OR REPLACE INTO sessions (portal,cookies,updated_at)
                 VALUES (?,?,?)
-            """, (portal, json.dumps(cookies), datetime.now(tz=__import__("datetime").timezone.utc).isoformat()+"Z"))
+            """, (portal, json.dumps(cookies), utc_now_iso()))
+            conn.commit()
+            conn.close()
+
+    # ── v4.4.0: wait-time persistence ────────────────────────────────────
+    # The USStateDeptProcessor previously abused the slots table with
+    # column names (`id`, `metadata`, `expires_at`) that never existed in
+    # this schema, so every read/write raised OperationalError (swallowed
+    # at debug level) and no wait-time comparison ever happened. A small
+    # dedicated key/value table keeps it honest. Values round-trip as JSON
+    # so both numeric day counts and status strings ("Closed") survive.
+
+    def set_wait_time(self, key: str, value):
+        with self._lock:
+            conn = self._conn()
+            conn.execute("""
+                INSERT OR REPLACE INTO wait_times (key, value, updated_at)
+                VALUES (?,?,?)
+            """, (key, json.dumps(value), utc_now_iso()))
+            conn.commit()
+            conn.close()
+
+    def get_wait_time(self, key: str):
+        with self._lock:
+            conn = self._conn()
+            row = conn.execute(
+                "SELECT value FROM wait_times WHERE key=?", (key,)
+            ).fetchone()
+            conn.close()
+        if not row or row[0] is None:
+            return None
+        try:
+            return json.loads(row[0])
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    def get_all_wait_times(self) -> list[dict]:
+        with self._lock:
+            conn = self._conn()
+            rows = conn.execute(
+                "SELECT key, value, updated_at FROM wait_times ORDER BY key"
+            ).fetchall()
+            conn.close()
+        out = []
+        for key, value, updated_at in rows:
+            try:
+                parsed = json.loads(value) if value is not None else None
+            except (json.JSONDecodeError, TypeError):
+                parsed = value
+            out.append({"key": key, "value": parsed, "updated_at": updated_at})
+        return out
+
+    def mark_notified(self, uids: list[str]):
+        """v4.4.0: flag slots as notified after a successful dispatch.
+
+        The column existed since v3.0 but nothing ever set it, so the
+        dashboard's `notified` field was always 0.
+        """
+        if not uids:
+            return
+        with self._lock:
+            conn = self._conn()
+            conn.executemany(
+                "UPDATE slots SET notified=1 WHERE uid=?",
+                [(u,) for u in uids],
+            )
             conn.commit()
             conn.close()
 
@@ -674,7 +826,11 @@ class Database:
         }
 
     def expire_old(self, days=7):
-        cutoff = (datetime.now(tz=__import__("datetime").timezone.utc) - timedelta(days=days)).isoformat()
+        # Formatted like utc_now_iso() so lexicographic comparison against
+        # stored found_at values stays coherent (old "+00:00Z" rows still
+        # compare correctly at day granularity — dates dominate the sort).
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)) \
+            .isoformat(timespec="seconds").replace("+00:00", "Z")
         with self._lock:
             conn = self._conn()
             conn.execute("UPDATE slots SET expired=1 WHERE found_at < ?", (cutoff,))
@@ -715,42 +871,73 @@ class BrowserManager:
         ua = rand_ua()
         proxy = self._next_proxy()
 
-        opts = Options()
-        if self.headless:
-            opts.add_argument("--headless=new")
-        opts.add_argument("--no-sandbox")
-        opts.add_argument("--disable-dev-shm-usage")
-        opts.add_argument("--disable-gpu")
-        opts.add_argument("--disable-blink-features=AutomationControlled")
-        opts.add_argument(f"--user-agent={ua}")
-        opts.add_argument("--window-size=1920,1080")
-        opts.add_argument("--disable-extensions")
-        opts.add_argument("--disable-infobars")
-        # Reduce noisy warnings/banners on real devices
-        opts.add_argument("--lang=en-US")
-        opts.add_argument("--disable-features=Translate,InterestFeedContentSuggestions")
-        opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-        opts.add_experimental_option("useAutomationExtension", False)
-
-        if proxy:
-            opts.add_argument(f"--proxy-server={proxy}")
-
-        if capture_network:
-            opts.set_capability("goog:loggingPrefs", {"performance": "ALL", "browser": "ALL"})
+        # v4.4.0: each strategy gets a FRESH Options object. Selenium Manager
+        # MUTATES the options it's given (it stamps the browser binary it
+        # resolved into options.binary_location). With a shared object,
+        # strategy 1's browser choice leaked into strategy 2, pairing
+        # webdriver-manager's chromedriver with Selenium Manager's Chrome —
+        # a guaranteed version mismatch whenever the two resolvers disagree.
+        def _build_opts() -> Options:
+            opts = Options()
+            if self.headless:
+                opts.add_argument("--headless=new")
+            opts.add_argument("--no-sandbox")
+            opts.add_argument("--disable-dev-shm-usage")
+            opts.add_argument("--disable-gpu")
+            opts.add_argument("--disable-blink-features=AutomationControlled")
+            opts.add_argument(f"--user-agent={ua}")
+            opts.add_argument("--window-size=1920,1080")
+            opts.add_argument("--disable-extensions")
+            opts.add_argument("--disable-infobars")
+            # Reduce noisy warnings/banners on real devices
+            opts.add_argument("--lang=en-US")
+            opts.add_argument("--disable-features=Translate,InterestFeedContentSuggestions")
+            opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+            opts.add_experimental_option("useAutomationExtension", False)
+            if proxy:
+                opts.add_argument(f"--proxy-server={proxy}")
+            if capture_network:
+                opts.set_capability("goog:loggingPrefs", {"performance": "ALL", "browser": "ALL"})
+            return opts
 
         driver = None
         last_err = None
+
+        # ── Strategy 0 (v4.4.0): explicit env overrides ──
+        # VISA_CHROME_BINARY / VISA_CHROMEDRIVER pin the exact browser and
+        # driver. Deterministic escape hatch for containers/CI where the
+        # auto-resolvers pick mismatched versions (e.g. a stale chromedriver
+        # on PATH next to a Playwright-managed Chromium).
+        env_binary = os.environ.get("VISA_CHROME_BINARY", "").strip()
+        env_driver = os.environ.get("VISA_CHROMEDRIVER", "").strip()
+        if env_binary or env_driver:
+            try:
+                from selenium.webdriver.chrome.service import Service as ChromeService
+                opts = _build_opts()
+                if env_binary:
+                    opts.binary_location = env_binary
+                if env_driver:
+                    driver = webdriver.Chrome(
+                        service=ChromeService(executable_path=env_driver), options=opts)
+                else:
+                    driver = webdriver.Chrome(options=opts)
+                log.debug(f"Driver: env override (binary={env_binary or 'auto'}, "
+                          f"driver={env_driver or 'auto'})")
+            except Exception as e:
+                last_err = e
+                log.warning(f"Env-override driver failed: {str(e)[:160]}")
 
         # ── Strategy 1: Selenium Manager (Selenium 4.6+) ──
         # No service= argument means Selenium auto-resolves the driver matching
         # the installed Chrome browser. This is the only strategy that works
         # reliably across Chrome auto-updates.
-        try:
-            driver = webdriver.Chrome(options=opts)
-            log.debug("Driver: Selenium Manager (auto-resolved)")
-        except Exception as e:
-            last_err = e
-            log.warning(f"Selenium Manager failed: {str(e)[:160]}")
+        if driver is None:
+            try:
+                driver = webdriver.Chrome(options=_build_opts())
+                log.debug("Driver: Selenium Manager (auto-resolved)")
+            except Exception as e:
+                last_err = e
+                log.warning(f"Selenium Manager failed: {str(e)[:160]}")
 
         # ── Strategy 2: webdriver-manager fallback ──
         if driver is None:
@@ -759,7 +946,7 @@ class BrowserManager:
                 from webdriver_manager.chrome import ChromeDriverManager
                 driver_path = ChromeDriverManager().install()
                 service = ChromeService(executable_path=driver_path)
-                driver = webdriver.Chrome(service=service, options=opts)
+                driver = webdriver.Chrome(service=service, options=_build_opts())
                 log.info(f"Driver: webdriver-manager fallback ({driver_path})")
             except Exception as e:
                 last_err = e
@@ -769,7 +956,8 @@ class BrowserManager:
             raise RuntimeError(
                 f"Could not create Chrome driver. Last error: {last_err}. "
                 f"Make sure Chrome/Chromium is installed and matches your "
-                f"selenium version (>=4.6 recommended)."
+                f"selenium version (>=4.6 recommended). In containers, pin "
+                f"VISA_CHROME_BINARY and VISA_CHROMEDRIVER env vars."
             )
 
         # Apply stealth patches
@@ -1523,6 +1711,9 @@ def load_centers_registry(path: str = "centers.json") -> dict:
         # v3.2.2c: utf-8-sig strips optional BOM (PowerShell-friendly)
         with open(p, encoding="utf-8-sig") as f:
             CENTERS_REGISTRY = json.load(f)
+        # v4.4.0: reset the index on (re)load — reloading after an edit
+        # (select-countries) used to leave stale winners in place.
+        COUNTRY_INDEX.clear()
         # Build name -> center index for fast lookup. Prefer the highest-
         # priority enabled entry when multiple processors serve one country.
         prio_rank = {"high": 3, "medium": 2, "low": 1}
@@ -1687,9 +1878,11 @@ class VFSJWTSession:
 
     def __init__(self, browser_mgr: "BrowserManager"):
         self.browser = browser_mgr
-        self._jwt: Optional[str] = None
-        self._jwt_acquired_at: float = 0
-        self._jwt_country: Optional[str] = None
+        # v4.4.0: per-country token cache. The old single-slot cache
+        # (_jwt/_jwt_country) was invalidated on every country switch, so a
+        # multi-country cycle re-harvested via a fresh ~20s Selenium session
+        # for each country even when its token was still valid.
+        self._tokens: dict[str, tuple[str, float]] = {}  # country -> (jwt, acquired_at)
         self._lock = threading.Lock()
         # v3.2.2: track per-country consecutive harvest failures
         self._failures: dict[str, int] = {}
@@ -1707,15 +1900,12 @@ class VFSJWTSession:
             if country in self._circuit_open:
                 return None
 
-            age = time.time() - self._jwt_acquired_at
-            if (self._jwt and age < self.JWT_TTL_SECONDS
-                    and self._jwt_country == country):
-                return self._jwt
+            cached = self._tokens.get(country)
+            if cached and (time.time() - cached[1]) < self.JWT_TTL_SECONDS:
+                return cached[0]
             jwt = self._harvest(country, portal_url)
             if jwt:
-                self._jwt = jwt
-                self._jwt_acquired_at = time.time()
-                self._jwt_country = country
+                self._tokens[country] = (jwt, time.time())
                 # Success — reset failure counter
                 self._failures.pop(country, None)
             else:
@@ -1742,13 +1932,23 @@ class VFSJWTSession:
                 self._circuit_open.discard(country)
                 self._failures.pop(country, None)
 
+    def invalidate(self, country: Optional[str] = None):
+        """v4.4.0: drop cached token(s) — e.g. after a 401 on replay."""
+        with self._lock:
+            if country is None:
+                self._tokens.clear()
+            else:
+                self._tokens.pop(country, None)
+
     def health(self) -> dict:
         """v3.2.2: introspection for the `status` CLI command."""
         with self._lock:
+            now = time.time()
             return {
-                "cached_country": self._jwt_country,
-                "cache_age_seconds": (time.time() - self._jwt_acquired_at)
-                                     if self._jwt else None,
+                "cached_countries": {
+                    c: round(now - acquired, 1)
+                    for c, (_tok, acquired) in self._tokens.items()
+                },
                 "open_circuits": sorted(self._circuit_open),
                 "failure_counts": dict(self._failures),
             }
@@ -1842,7 +2042,8 @@ class VFSJWTSession:
                 except: pass
 
     def replay(self, endpoint: str, jwt: str, params: dict,
-               method: str = "GET", timeout: int = 12) -> Optional[dict]:
+               method: str = "GET", timeout: int = 12,
+               country: Optional[str] = None) -> Optional[dict]:
         """Make an authenticated request to a VFS lift-api endpoint."""
         headers = {
             "Authorization": f"Bearer {jwt}",
@@ -1860,7 +2061,7 @@ class VFSJWTSession:
                                     headers=headers, timeout=timeout)
             if resp.status_code == 401:
                 self.log.warning("  JWT replay: 401 — token expired, will re-harvest")
-                self._jwt = None  # force re-acquisition next call
+                self.invalidate(country)  # force re-acquisition next call
                 return None
             if resp.status_code == 403:
                 self.log.debug("  JWT replay: 403 — Cloudflare or scope mismatch")
@@ -2005,9 +2206,15 @@ class USStateDeptProcessor:
                     city=city,
                     visa_type=visa_code,
                     date=proj_date,
+                    time_slot=f"wait dropped {prev} → {current_days} days",
+                    portal="us_state_dept",
                     detection_method="us_wait_time_drop",
                     booking_url="https://ais.usvisa-info.com/en-in/niv/users/sign_in",
                     confidence="medium",  # state.gov is authoritative but monthly latency
+                    raw_data=json.dumps({
+                        "consulate": city, "visa": visa_code,
+                        "previous_days": prev, "current_days": current_days,
+                    })[:500],
                 ))
                 self.log.info(
                     f"  🇺🇸 US/{city}/{visa_code}: WAIT TIME DROP "
@@ -2089,11 +2296,80 @@ class USStateDeptProcessor:
 
         return variants
 
+    # Header-token → canonical visa label. state.gov phrases its column
+    # headers inconsistently ("Visitors (B1/B2)", "Interview Required
+    # Visitors (B1/B2)", …) but the parenthetical category codes are stable.
+    HEADER_TOKEN_TO_LABEL = {
+        "b1/b2": "Visitor (B1/B2)",
+        "b1 / b2": "Visitor (B1/B2)",
+        "f, m, j": "Student/Exchange Visitor (F, M, J)",
+        "f,m,j": "Student/Exchange Visitor (F, M, J)",
+        "h, l, o, p, q": "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "h,l,o,p,q": "Petition-Based Temporary Workers (H, L, O, P, Q)",
+        "c1/d": "Crew/Transit (C1/D)",
+        "c1 / d": "Crew/Transit (C1/D)",
+        "other nonimmigrant": "Other Nonimmigrant Visas",
+    }
+
+    def _parse_wait_table(self, html: str, consulate: str) -> dict:
+        """v4.4.0: parse the real state.gov layout — an HTML table whose
+        header row carries the visa-category labels and whose body rows are
+        one city each. The old regex strategy looked for a visa label within
+        1500 chars *after* the city name, which never matches a standard
+        table (labels appear once, in the header) — so state.gov parsing
+        silently returned {} and everything fell through to CGI Federal.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        variants = {v.lower() for v in self._consulate_name_variants(consulate)}
+
+        for table in soup.find_all("table"):
+            rows = table.find_all("tr")
+            if len(rows) < 2:
+                continue
+            header_cells = [c.get_text(" ", strip=True)
+                            for c in rows[0].find_all(["th", "td"])]
+            col_map: dict[int, str] = {}
+            for idx, header in enumerate(header_cells):
+                hl = header.lower()
+                for token, label in self.HEADER_TOKEN_TO_LABEL.items():
+                    if token in hl:
+                        col_map[idx] = label
+                        break
+            if not col_map:
+                continue
+
+            for row in rows[1:]:
+                cells = [c.get_text(" ", strip=True)
+                         for c in row.find_all(["td", "th"])]
+                if not cells:
+                    continue
+                city_cell = cells[0].strip().lower()
+                if not any(v == city_cell or v in city_cell for v in variants):
+                    continue
+                result: dict = {}
+                for idx, label in col_map.items():
+                    if idx >= len(cells):
+                        continue
+                    cell = cells[idx].strip()
+                    m = re.search(r"(\d{1,4})", cell)
+                    if m:
+                        days = int(m.group(1))
+                        if 0 <= days <= 1500:
+                            result[label] = days
+                    elif cell:
+                        # Non-numeric status ("Closed", "Emergency only") —
+                        # keep it so a later transition to numeric alerts.
+                        result[label] = cell[:40]
+                if result:
+                    return result
+        return {}
+
     def _fetch_state_gov(self, consulate: str) -> dict:
         """Scrape state.gov wait times page for a specific consulate.
 
-        The page is server-rendered HTML (Drupal). Each consulate has a
-        section/row with visa type labels and numeric or status values.
+        The page is server-rendered HTML (Drupal). v4.4.0 parses the wait
+        table structurally first (header columns × city rows); the legacy
+        regex proximity strategy remains as a fallback for layout drift.
         """
         try:
             resp = requests.get(
@@ -2112,10 +2388,14 @@ class USStateDeptProcessor:
 
         html = resp.text
 
-        # state.gov uses a tabular structure. The exact format may evolve;
-        # we use a robust regex strategy:
+        # v4.4.0: structural table parse first
+        table_result = self._parse_wait_table(html, consulate)
+        if table_result:
+            return table_result
+
+        # Legacy fallback: proximity regex strategy
         # 1. Find the consulate name as text
-        # 2. Extract the next ~500 chars (one row's worth of data)
+        # 2. Extract the next ~1500 chars (one row's worth of data)
         # 3. Look for numeric values or status keywords
         result: dict = {}
 
@@ -2227,56 +2507,25 @@ class USStateDeptProcessor:
         return False
 
     def _get_previous(self, db_key: str):
-        """Read previous wait-time value from DB. Stored in slots.metadata."""
-        try:
-            con = sqlite3.connect(self.db.path)
-            cur = con.cursor()
-            cur.execute(
-                "SELECT metadata FROM slots WHERE id = ? ORDER BY found_at DESC LIMIT 1",
-                (db_key,),
-            )
-            row = cur.fetchone()
-            con.close()
-            if row and row[0]:
-                meta = json.loads(row[0])
-                val = meta.get("wait_days")
-                return val
-        except Exception as e:
-            self.log.debug(f"Could not read previous wait time: {e}")
-        return None
+        """Read the previous wait-time value from the wait_times table.
 
-    def _store_current(self, db_key: str, value):
-        """Persist current wait-time value for next cycle's comparison.
-
-        Reuses the slots table rather than adding a new schema. The metadata
-        JSON column is well-suited; we add a synthetic slot ID per
-        (consulate, visa_type).
+        v4.4.0 fix: this used to query `slots.metadata` filtered by
+        `slots.id` — neither column has ever existed (the table's key is
+        `uid` and it has no metadata/expires_at columns). The
+        OperationalError was swallowed at debug level, so `prev` was always
+        None and a wait-time drop alert could never fire. Same story for
+        `_store_current` below. See Database.set_wait_time/get_wait_time.
         """
         try:
-            con = sqlite3.connect(self.db.path)
-            cur = con.cursor()
-            cur.execute("""
-                INSERT OR REPLACE INTO slots
-                (id, country, city, visa_type, date, time_slot,
-                 detection_method, booking_url, confidence, found_at,
-                 expires_at, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                db_key,
-                "United States",
-                db_key.split("|")[1] if "|" in db_key else "",
-                db_key.split("|")[2] if db_key.count("|") >= 2 else "",
-                "wait_time_baseline",
-                "",
-                "us_wait_time_baseline",
-                self.CGI_FEDERAL_URL,
-                "internal",
-                datetime.now().isoformat(),
-                (datetime.now() + timedelta(days=60)).isoformat(),
-                json.dumps({"wait_days": value}),
-            ))
-            con.commit()
-            con.close()
+            return self.db.get_wait_time(db_key)
+        except Exception as e:
+            self.log.debug(f"Could not read previous wait time: {e}")
+            return None
+
+    def _store_current(self, db_key: str, value):
+        """Persist the current wait-time value for next cycle's comparison."""
+        try:
+            self.db.set_wait_time(db_key, value)
         except Exception as e:
             self.log.debug(f"Could not store wait time: {e}")
 
@@ -2368,7 +2617,8 @@ class UnifiedChecker:
                             "days": 90,
                             "slotType": 2,
                         }
-                        replayed = self.vfs_jwt.replay(ep, jwt, params)
+                        replayed = self.vfs_jwt.replay(ep, jwt, params,
+                                                       country=country)
                         if replayed:
                             api_data.append({
                                 "url": ep,
@@ -2816,7 +3066,7 @@ class Calibrator:
         IP. 2-4 is a reasonable upper bound on residential connections.
         """
         report = {
-            "calibrated_at": datetime.now(tz=__import__("datetime").timezone.utc).isoformat()+"Z",
+            "calibrated_at": utc_now_iso(),
             "countries": {},
             "summary": {
                 "total": len(countries),
@@ -2995,8 +3245,16 @@ class Notifier:
         if disc_cfg.get("webhook_url"):
             self._send_discord(slots, disc_cfg)
 
-        # Desktop sound
-        if self.config.get("desktop_alerts", True):
+        # Generic webhook (v4.4.0) — ntfy / Slack / Home Assistant / any
+        # endpoint that accepts a JSON POST.
+        wh_cfg = self.config.get("webhook", {})
+        if wh_cfg.get("url"):
+            self._send_webhook(slots, wh_cfg)
+
+        # Desktop sound. Skipped in CI — GitHub Actions runners have no
+        # notify-send/toast surface, so it just warned on every dispatch.
+        if self.config.get("desktop_alerts", True) and not (
+                os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS")):
             self._desktop_alert(slots)
 
     def _send_summary(self, slots: list[SlotInfo], total: int):
@@ -3040,11 +3298,13 @@ class Notifier:
         if tg_cfg.get("bot_token"):
             try:
                 for chat_id in tg_cfg.get("chat_ids", []):
-                    requests.post(
+                    r = requests.post(
                         f"https://api.telegram.org/bot{tg_cfg['bot_token']}/sendMessage",
                         json={"chat_id": chat_id, "text": body},
                         timeout=10,
                     )
+                    if r.status_code != 200:
+                        self.log.error(f"Summary Telegram failed: HTTP {r.status_code} {r.text[:120]}")
                 self.log.info("Summary Telegram sent")
             except Exception as e:
                 self.log.error(f"Summary Telegram failed: {e}")
@@ -3053,11 +3313,27 @@ class Notifier:
         disc_cfg = self.config.get("discord", {})
         if disc_cfg.get("webhook_url"):
             try:
-                requests.post(disc_cfg["webhook_url"],
+                r = requests.post(disc_cfg["webhook_url"],
                     json={"content": body[:1900]}, timeout=10)
-                self.log.info("Summary Discord sent")
+                if r.status_code >= 400:
+                    self.log.error(f"Summary Discord failed: HTTP {r.status_code}")
+                else:
+                    self.log.info("Summary Discord sent")
             except Exception as e:
                 self.log.error(f"Summary Discord failed: {e}")
+
+        # Generic webhook (v4.4.0)
+        wh_cfg = self.config.get("webhook", {})
+        if wh_cfg.get("url"):
+            try:
+                requests.post(wh_cfg["url"], json={
+                    "event": "visa_slots_rate_limited",
+                    "count": total,
+                    "sent_at": utc_now_iso(),
+                    "summary": body,
+                }, timeout=10)
+            except Exception as e:
+                self.log.error(f"Summary webhook failed: {e}")
 
     def _send_email(self, slots, cfg):
         try:
@@ -3086,28 +3362,69 @@ class Notifier:
         except Exception as e:
             self.log.error(f"Email failed: {e}")
 
+    # Telegram hard limit is 4096 chars/message. Chunk below that with
+    # headroom — a 25-slot alert (~5000 chars) used to get a 400 from the
+    # Bot API and the alert was silently lost.
+    TELEGRAM_CHUNK_CHARS = 3500
+
+    @classmethod
+    def _telegram_chunks(cls, header: str, blocks: list[str]) -> list[str]:
+        """v4.4.0: pack per-slot blocks into messages under the API limit."""
+        chunks: list[str] = []
+        current = header
+        for block in blocks:
+            candidate = current + "\n" + block
+            if len(candidate) > cls.TELEGRAM_CHUNK_CHARS and current != header:
+                chunks.append(current)
+                current = header + "\n" + block
+            else:
+                current = candidate
+        if current.strip():
+            chunks.append(current)
+        return chunks
+
+    def _post_telegram(self, cfg: dict, chat_id: str, text: str) -> bool:
+        """POST one message; verify the API response instead of assuming ok."""
+        resp = requests.post(
+            f"https://api.telegram.org/bot{cfg['bot_token']}/sendMessage",
+            json={"chat_id": chat_id, "text": text,
+                  "parse_mode": "HTML", "disable_web_page_preview": True},
+            timeout=10,
+        )
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        if resp.status_code != 200 or not body.get("ok"):
+            self.log.error(
+                f"Telegram send failed for chat {chat_id}: HTTP {resp.status_code} "
+                f"{body.get('description', resp.text[:120])}"
+            )
+            return False
+        return True
+
     def _send_telegram(self, slots, cfg):
         try:
-            lines = [f"🎯 <b>Visa Slot Alert!</b> ({len(slots)} slot{'s' if len(slots)>1 else ''})\n"]
+            header = f"🎯 <b>Visa Slot Alert!</b> ({len(slots)} slot{'s' if len(slots)>1 else ''})"
+            blocks = []
             for s in slots:
                 conf = "🟢" if s.confidence == "high" else "🟡"
-                lines.append(
-                    f"{conf} <b>{s.country}</b> — {s.city}\n"
-                    f"   📋 {s.visa_type}\n"
-                    f"   📅 {s.date} {s.time_slot}\n"
-                    f"   🔍 {s.detection_method} ({s.confidence})\n"
-                    f"   🔗 <a href='{s.booking_url}'>Book Now</a>\n"
+                url = html_escape(s.booking_url or "", quote=True)
+                blocks.append(
+                    f"{conf} <b>{html_escape(s.country)}</b> — {html_escape(s.city)}\n"
+                    f"   📋 {html_escape(s.visa_type)}\n"
+                    f"   📅 {html_escape(s.date)} {html_escape(s.time_slot)}\n"
+                    f"   🔍 {html_escape(s.detection_method)} ({html_escape(s.confidence)})\n"
+                    f"   🔗 <a href='{url}'>Book Now</a>\n"
                 )
-            text = "\n".join(lines)
+            chunks = self._telegram_chunks(header, blocks)
 
+            sent = 0
             for chat_id in cfg.get("chat_ids", []):
-                requests.post(
-                    f"https://api.telegram.org/bot{cfg['bot_token']}/sendMessage",
-                    json={"chat_id": chat_id, "text": text,
-                          "parse_mode": "HTML", "disable_web_page_preview": True},
-                    timeout=10,
-                )
-            self.log.info("Telegram sent")
+                for chunk in chunks:
+                    if self._post_telegram(cfg, chat_id, chunk):
+                        sent += 1
+            self.log.info(f"Telegram sent ({sent} message(s), {len(chunks)} chunk(s)/chat)")
         except Exception as e:
             self.log.error(f"Telegram failed: {e}")
 
@@ -3129,13 +3446,40 @@ class Notifier:
                 })
 
             for i in range(0, len(embeds), 10):
-                requests.post(cfg["webhook_url"], json={
+                resp = requests.post(cfg["webhook_url"], json={
                     "content": f"🎯 **{len(slots)} Visa Slot(s) Found!**",
                     "embeds": embeds[i:i+10],
                 }, timeout=10)
+                if resp.status_code >= 400:
+                    self.log.error(
+                        f"Discord send failed: HTTP {resp.status_code} {resp.text[:120]}"
+                    )
             self.log.info("Discord sent")
         except Exception as e:
             self.log.error(f"Discord failed: {e}")
+
+    def _send_webhook(self, slots, cfg):
+        """v4.4.0: generic JSON webhook. Works with ntfy, Slack incoming
+        webhooks (as a raw JSON payload), Home Assistant, n8n, etc."""
+        try:
+            payload = {
+                "event": "visa_slots_found",
+                "count": len(slots),
+                "sent_at": utc_now_iso(),
+                "slots": [s.to_dict() for s in slots],
+            }
+            headers = {"Content-Type": "application/json"}
+            headers.update(cfg.get("headers", {}))
+            resp = requests.post(cfg["url"], json=payload,
+                                 headers=headers, timeout=10)
+            if resp.status_code >= 400:
+                self.log.error(
+                    f"Webhook send failed: HTTP {resp.status_code} {resp.text[:120]}"
+                )
+            else:
+                self.log.info(f"Webhook sent ({resp.status_code})")
+        except Exception as e:
+            self.log.error(f"Webhook failed: {e}")
 
     def _desktop_alert(self, slots):
         """Display a desktop toast notification.
@@ -3243,7 +3587,7 @@ class Server:
     async def broadcast(self, event: str, data: dict):
         if not self.ws_clients: return
         msg = json.dumps({"type": event, "data": data,
-                         "ts": datetime.now(tz=__import__("datetime").timezone.utc).isoformat()+"Z"})
+                         "ts": utc_now_iso()})
         dead = set()
         for ws in self.ws_clients:
             try: await ws.send(msg)
@@ -3278,7 +3622,7 @@ class Server:
 
         # CORS preflight
         if method == "OPTIONS":
-            return aiohttp.web.Response(status=204, headers={
+            return aiohttp_web.Response(status=204, headers={
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
                 "Access-Control-Allow-Headers": "Content-Type",
@@ -3289,18 +3633,18 @@ class Server:
         # POST /api/run-now — manual trigger from dashboard
         if path == "/api/run-now" and method == "POST":
             if not self.tracker:
-                return aiohttp.web.json_response(
+                return aiohttp_web.json_response(
                     {"ok": False, "error": "Tracker not attached to server"},
                     status=503, headers=cors,
                 )
             # Don't queue multiple manual runs; if one is in-flight, just acknowledge
             if self._run_now_task and not self._run_now_task.done():
-                return aiohttp.web.json_response(
+                return aiohttp_web.json_response(
                     {"ok": True, "queued": False, "msg": "Manual cycle already running"},
                     headers=cors,
                 )
             self._run_now_task = asyncio.create_task(self.tracker.run_cycle())
-            return aiohttp.web.json_response(
+            return aiohttp_web.json_response(
                 {"ok": True, "queued": True, "msg": "Manual cycle started"},
                 headers=cors,
             )
@@ -3310,8 +3654,10 @@ class Server:
             "/api/slots":  lambda: self.db.get_active_slots(),
             "/api/checks": lambda: self.db.recent_checks(100),
             "/api/stats":  lambda: self.db.stats(),
+            "/api/wait-times": lambda: self.db.get_all_wait_times(),  # v4.4.0
             "/api/health": lambda: {
                 "status": "ok",
+                "version": __version__,
                 "clients": len(self.ws_clients),
                 "tracker_attached": self.tracker is not None,
                 "running": getattr(self.tracker, "_running", None) if self.tracker else None,
@@ -3319,36 +3665,43 @@ class Server:
         }
         handler = getters.get(path)
         if not handler:
-            return aiohttp.web.Response(status=404, headers=cors)
+            return aiohttp_web.Response(status=404, headers=cors)
         try:
-            return aiohttp.web.json_response(handler(), headers=cors)
+            return aiohttp_web.json_response(handler(), headers=cors)
         except Exception as e:
             self.log.error(f"HTTP handler error on {path}: {e}")
-            return aiohttp.web.json_response({"error": str(e)}, status=500, headers=cors)
+            return aiohttp_web.json_response({"error": str(e)}, status=500, headers=cors)
 
     async def start(self):
-        ws_server = await websockets.serve(self.ws_handler, "0.0.0.0", self.ws_port)
+        # Keep a reference on self — a bare local would be eligible for GC
+        # after start() returns.
+        self._ws_server = await websockets.serve(self.ws_handler, "0.0.0.0", self.ws_port)
         self.log.info(f"WebSocket: ws://0.0.0.0:{self.ws_port}")
 
-        app = aiohttp.web.Application()
+        app = aiohttp_web.Application()
         # GETs
-        for path in ["/api/slots", "/api/checks", "/api/stats", "/api/health"]:
+        for path in ["/api/slots", "/api/checks", "/api/stats",
+                     "/api/wait-times", "/api/health"]:
             app.router.add_get(path, self.http_handler)
             app.router.add_options(path, self.http_handler)
         # POSTs
         app.router.add_post("/api/run-now", self.http_handler)
         app.router.add_options("/api/run-now", self.http_handler)
 
-        runner = aiohttp.web.AppRunner(app)
+        runner = aiohttp_web.AppRunner(app)
         await runner.setup()
-        await aiohttp.web.TCPSite(runner, "0.0.0.0", self.http_port).start()
+        await aiohttp_web.TCPSite(runner, "0.0.0.0", self.http_port).start()
         self.log.info(f"HTTP API: http://0.0.0.0:{self.http_port}")
-        self.log.info(f"  Endpoints: /api/slots, /api/checks, /api/stats, /api/health, /api/run-now")
+        self.log.info(f"  Endpoints: /api/slots, /api/checks, /api/stats, /api/wait-times, /api/health, /api/run-now")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  MAIN ENGINE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# v4.4.0: trackers register here so the SIGINT handler can stop them cleanly.
+_ACTIVE_TRACKERS: list = []
+
 
 def _default_targets_from_registry() -> list[dict]:
     """Seed default targets from the centers.json registry. Falls back to a
@@ -3362,7 +3715,12 @@ def _default_targets_from_registry() -> list[dict]:
     `set-tier` CLI command to promote countries to 'hot' or 'warm'.
     """
     targets: list[dict] = []
-    seen: set[str] = set()
+    # v4.4.0 fix: dedupe key is (country, processor), and cities MERGE
+    # across centers instead of first-one-wins. The registry keeps one
+    # center per US consulate — 36 entries all named "United States" — and
+    # the old country-only dedupe collapsed them to the single first city,
+    # so 35 of the 36 US consulates were silently never monitored.
+    by_key: dict[tuple, dict] = {}
     if CENTERS_REGISTRY:
         for c in CENTERS_REGISTRY.get("centers", []):
             if not c.get("enabled"):
@@ -3373,16 +3731,28 @@ def _default_targets_from_registry() -> list[dict]:
             if c.get("_indian_passport_status") in ("visa_free", "evisa"):
                 continue
             name = c.get("destination_country")
-            if not name or name in seen:
+            if not name:
                 continue
-            seen.add(name)
-            targets.append({
-                "country": name,
-                "cities": c.get("indian_cities", ["New Delhi"]),
-                "visa_types": c.get("visa_types", ["Tourist", "Business"]),
-                "processor": c.get("processor"),
-                "tier": c.get("tier", "cold"),  # v4.0.0
-            })
+            key = (name, c.get("processor"))
+            existing = by_key.get(key)
+            if existing is None:
+                entry = {
+                    "country": name,
+                    "cities": list(c.get("indian_cities", ["New Delhi"])),
+                    "visa_types": c.get("visa_types", ["Tourist", "Business"]),
+                    "processor": c.get("processor"),
+                    "tier": c.get("tier", "cold"),  # v4.0.0
+                }
+                by_key[key] = entry
+                targets.append(entry)
+            else:
+                for city in c.get("indian_cities", []):
+                    if city not in existing["cities"]:
+                        existing["cities"].append(city)
+                # A hotter tier on any merged center wins for the target
+                tier_rank = {"hot": 3, "warm": 2, "cold": 1}
+                if tier_rank.get(c.get("tier", "cold"), 1) > tier_rank.get(existing["tier"], 1):
+                    existing["tier"] = c.get("tier", "cold")
     if targets:
         return targets
     # Hand-curated fallback (registry missing)
@@ -3418,6 +3788,9 @@ class VisaTracker:
             max_workers=self.config.get("max_concurrent", 2)
         )
         self._running = True
+        # v4.4.0: registered so the SIGINT handler can shut the executor
+        # down instead of leaving non-daemon worker threads to hang exit.
+        _ACTIVE_TRACKERS.append(self)
 
     def _load_config(self, path: str) -> dict:
         if os.path.exists(path):
@@ -3453,6 +3826,8 @@ class VisaTracker:
             },
             "telegram": {"bot_token": "", "chat_ids": []},
             "discord": {"webhook_url": ""},
+            "webhook": {"url": ""},  # v4.4.0: generic JSON webhook
+            "instant_notify": True,
             "targets": _default_targets_from_registry()
         }
 
@@ -3512,6 +3887,8 @@ class VisaTracker:
                 # Mark these so cycle-end batch doesn't re-notify
                 for s in new_slots:
                     s._instant_sent = True
+                if not self.notifier.dry_run:
+                    self.db.mark_notified([s.uid for s in new_slots])
             except Exception as e:
                 log.error(f"  ❌ Instant notification failed for {country}: {e}")
                 # Don't mark as sent — let cycle-end batch retry
@@ -3546,6 +3923,8 @@ class VisaTracker:
             if pending:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, self.notifier.send, pending)
+                if not self.notifier.dry_run:
+                    self.db.mark_notified([s.uid for s in pending])
             if self.server:
                 await self.server.broadcast("new_slots", {
                     "slots": [s.to_dict() for s in all_new],
@@ -3672,7 +4051,6 @@ class VisaTracker:
         # queue's next-due time is more than 30s in the future (i.e., we
         # have idle time before the next check).
         pending_alerts: list[SlotInfo] = []
-        last_notify = 0.0
         loop = asyncio.get_event_loop()
 
         # ── Main scheduling loop ─────────────────────────────────────────────
@@ -3686,6 +4064,8 @@ class VisaTracker:
                 log.info(f"🎯 {len(pending_alerts)} NEW slot(s) found! (tiered batch)")
                 try:
                     await loop.run_in_executor(None, self.notifier.send, pending_alerts)
+                    if not self.notifier.dry_run:
+                        self.db.mark_notified([s.uid for s in pending_alerts])
                     if self.server:
                         await self.server.broadcast("new_slots", {
                             "slots": [s.to_dict() for s in pending_alerts],
@@ -3694,7 +4074,6 @@ class VisaTracker:
                 except Exception as e:
                     log.error(f"Notification dispatch failed: {e}")
                 pending_alerts = []
-                last_notify = time.time()
 
             # Wait until next due
             if not queue:
@@ -3726,10 +4105,32 @@ class VisaTracker:
                 )
                 self.db.log_check(result)
 
+                fresh: list[SlotInfo] = []
                 for slot in result.slots:
                     if self.db.is_new(slot):
                         self.db.save_slot(slot)
-                        pending_alerts.append(slot)
+                        fresh.append(slot)
+
+                # v4.4.0: tiered mode now honors instant_notify too. v4.3.0
+                # only wired instant alerts into the plain cycle runner, so
+                # a hot-tier detection could still sit in pending_alerts
+                # until the next idle window — exactly the lag instant
+                # notification was built to remove.
+                if fresh and self.config.get("instant_notify", True):
+                    try:
+                        await loop.run_in_executor(None, self.notifier.send, fresh)
+                        if not self.notifier.dry_run:
+                            self.db.mark_notified([s.uid for s in fresh])
+                        if self.server:
+                            await self.server.broadcast("new_slots", {
+                                "slots": [s.to_dict() for s in fresh],
+                                "count": len(fresh),
+                            })
+                    except Exception as e:
+                        log.error(f"Instant notification failed for {country}: {e}")
+                        pending_alerts.extend(fresh)  # let the batch retry
+                else:
+                    pending_alerts.extend(fresh)
 
                 icon = {"slots_found": "🎯", "page_changed": "🔔",
                         "no_change": "·", "baseline": "📋",
@@ -3787,7 +4188,9 @@ class VisaTracker:
 
     def stop(self):
         self._running = False
-        self.executor.shutdown(wait=False)
+        # cancel_futures drops queued checks so a Ctrl+C doesn't hang on the
+        # executor's atexit join while a backlog of Selenium jobs drains.
+        self.executor.shutdown(wait=False, cancel_futures=True)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3809,6 +4212,8 @@ def interactive_setup():
                   "smtp_port": 587, "sender": "", "password": "", "recipients": []},
         "telegram": {"bot_token": "", "chat_ids": []},
         "discord": {"webhook_url": ""},
+        "webhook": {"url": ""},
+        "instant_notify": True,
         "targets": [],
     }
 
@@ -3857,24 +4262,29 @@ def interactive_setup():
 
     # ── City selection per country ──
     print("\nSTEP 3: Cities per country\n")
-    cities = ["New Delhi", "Mumbai", "Chennai", "Bangalore", "Hyderabad",
+    # v4.4.0: "Bangalore" → "Bengaluru" to match centers.json / VFS naming
+    cities = ["New Delhi", "Mumbai", "Chennai", "Bengaluru", "Hyderabad",
               "Kolkata", "Pune", "Ahmedabad", "Chandigarh"]
     print("  Available cities: " + ", ".join(cities))
-    print("  (Press Enter for default: New Delhi, Mumbai, Chennai, Bangalore, Hyderabad)\n")
+    print("  (Press Enter for default: New Delhi, Mumbai, Chennai, Bengaluru, Hyderabad)\n")
 
-    default_cities = ["New Delhi", "Mumbai", "Chennai", "Bangalore", "Hyderabad"]
+    default_cities = ["New Delhi", "Mumbai", "Chennai", "Bengaluru", "Hyderabad"]
     city_input = input("  Cities (comma-separated, or Enter for default): ").strip()
     if city_input:
         chosen_cities = [c.strip() for c in city_input.split(",")]
     else:
         chosen_cities = default_cities
 
-    # Build targets
+    # Build targets — carry processor + tier so tiered mode and dispatch
+    # work the same as select-countries-generated configs (v4.4.0)
     for country in selected:
+        rec = COUNTRY_INDEX.get(country.strip().lower(), {})
         config["targets"].append({
             "country": country,
             "cities": chosen_cities,
             "visa_types": ["Tourist", "Business", "Student"],  # safe defaults
+            "processor": rec.get("processor", "unknown"),
+            "tier": rec.get("tier", "cold"),
         })
 
     # ── Check interval ──
@@ -3993,7 +4403,7 @@ def _first_run_disclaimer_check():
     try:
         marker_path.write_text(
             f"acknowledged at {datetime.now().isoformat()}\n"
-            f"version: 4.3.0\n"
+            f"version: {__version__}\n"
             f"see DISCLAIMER.md and LEGAL.md in the repository\n"
         )
     except Exception as e:
@@ -4015,7 +4425,18 @@ def main():
     # v4.2.1 — first-run disclaimer
     _first_run_disclaimer_check()
 
-    signal.signal(signal.SIGINT, lambda *_: (log.info("Stopping..."), sys.exit(0)))
+    def _sigint_handler(*_):
+        log.info("Stopping...")
+        # v4.4.0: stop trackers so the ThreadPoolExecutor's atexit join
+        # doesn't hang the process on queued Selenium work.
+        for t in _ACTIVE_TRACKERS:
+            try:
+                t.stop()
+            except Exception:
+                pass
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _sigint_handler)
 
     if cmd == "setup":
         interactive_setup()
@@ -4325,7 +4746,7 @@ def main():
                 print(f"  ✗ {name}  →  {str(e)[:200]}")
 
         print("\n" + "="*60)
-        print("  VISA TRACKER — SELFTEST (v4.3.0)")
+        print(f"  VISA TRACKER — SELFTEST (v{__version__})")
         print("="*60)
 
         # 1. Registry loads
@@ -4463,7 +4884,6 @@ def main():
                 "//a[contains(translate(., 'BOOK', 'book'), 'book')]",
                 "//button[contains(@class, 'primary') or contains(@class, 'cta')]",
             ]
-            from xml.etree.ElementTree import ParseError
             # We can't fully validate XPath without lxml; do a basic sanity check
             for xp in xpaths:
                 assert xp.startswith("//"), f"bad xpath: {xp}"
@@ -4502,6 +4922,91 @@ def main():
             assert "Mozambique" not in countries
         _try("default targets seed (v3.2.1 corrections honored)", _t_default_targets)
 
+        # 11. v4.4.0: US consulate cities merge into one target (was: first-only)
+        def _t_us_cities_merged():
+            t = _default_targets_from_registry()
+            us = [x for x in t if x["country"] == "United States"
+                  and x.get("processor") == "us_state_dept"]
+            assert len(us) == 1, f"expected 1 merged US target, got {len(us)}"
+            n_cities = len(us[0]["cities"])
+            assert n_cities >= 5, (
+                f"US target has only {n_cities} consulate(s) — city merge regressed"
+            )
+        _try("US consulate cities merged into one target (v4.4.0)", _t_us_cities_merged)
+
+        # 12. v4.4.0: wait-time persistence round-trips (was 100% broken)
+        def _t_wait_times():
+            import os
+            tmpdir = tempfile.mkdtemp()
+            dbpath = os.path.join(tmpdir, "waittest.db")
+            db = Database(dbpath)
+            proc = USStateDeptProcessor(db)
+            proc._store_current("us_waittime|Mumbai|B1/B2", 400)
+            assert proc._get_previous("us_waittime|Mumbai|B1/B2") == 400, \
+                "numeric wait time did not round-trip"
+            proc._store_current("us_waittime|Chennai|C1/D", "Closed")
+            assert proc._get_previous("us_waittime|Chennai|C1/D") == "Closed", \
+                "status-string wait time did not round-trip"
+            assert proc._get_previous("us_waittime|Nowhere|X") is None
+            allw = db.get_all_wait_times()
+            assert len(allw) == 2, f"expected 2 baselines, got {len(allw)}"
+            # Drop detection actually works end-to-end now
+            assert proc._is_significant_drop(400, 200) is True
+            assert proc._is_significant_drop(200, 400) is False
+            try: os.remove(dbpath)
+            except: pass
+        _try("US wait-time persistence round-trip (v4.4.0 fix)", _t_wait_times)
+
+        # 13. v4.4.0: timestamps are valid RFC3339 (no '+00:00Z')
+        def _t_timestamps():
+            ts = utc_now_iso()
+            assert "+00:00" not in ts, f"double offset in {ts}"
+            assert ts.endswith("Z"), f"missing Z suffix: {ts}"
+            datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")  # parseable
+            s = SlotInfo(country="T", city="C", visa_type="V", date="2026-01-01")
+            assert "+00:00Z" not in s.found_at, f"SlotInfo.found_at malformed: {s.found_at}"
+        _try("timestamps are valid RFC3339 (v4.4.0 fix)", _t_timestamps)
+
+        # 14. v4.4.0: telegram chunking stays under the 4096 limit
+        def _t_telegram_chunks():
+            header = "🎯 header"
+            blocks = [f"block {i} " + "x" * 300 for i in range(30)]
+            chunks = Notifier._telegram_chunks(header, blocks)
+            assert len(chunks) > 1, "30 large blocks should split into multiple messages"
+            for ch in chunks:
+                assert len(ch) <= 4096, f"chunk exceeds Telegram limit: {len(ch)}"
+            # Nothing lost in the packing
+            joined = "\n".join(chunks)
+            for i in range(30):
+                assert f"block {i} " in joined, f"block {i} lost in chunking"
+        _try("telegram chunking under 4096-char limit (v4.4.0)", _t_telegram_chunks)
+
+        # 15. v4.4.0: state.gov wait table parses structurally
+        def _t_state_gov_table():
+            from unittest.mock import MagicMock
+            proc = USStateDeptProcessor(MagicMock())
+            html = """
+            <html><body><table>
+              <tr><th>City</th>
+                  <th>Interview Required Visitors (B1/B2)</th>
+                  <th>Interview Required Students/Exchange Visitors (F, M, J)</th>
+                  <th>Interview Required Petition-Based Temporary Workers (H, L, O, P, Q)</th>
+                  <th>Interview Required Crew and Transit (C1/D)</th>
+                  <th>Interview Waiver Other Nonimmigrant Visas</th></tr>
+              <tr><td>Chennai</td><td>44 Days</td><td>11 Days</td><td>217 Days</td><td>30 Days</td><td>90 Days</td></tr>
+              <tr><td>Mumbai</td><td>437 Days</td><td>15 Days</td><td>Closed</td><td>22 Days</td><td>60 Days</td></tr>
+            </table></body></html>
+            """
+            data = proc._parse_wait_table(html, "Mumbai")
+            assert data.get("Visitor (B1/B2)") == 437, f"B1/B2 parse failed: {data}"
+            assert data.get("Student/Exchange Visitor (F, M, J)") == 15, f"F/M/J parse failed: {data}"
+            assert data.get("Petition-Based Temporary Workers (H, L, O, P, Q)") == "Closed", \
+                f"status string not preserved: {data}"
+            data2 = proc._parse_wait_table(html, "Chennai")
+            assert data2.get("Crew/Transit (C1/D)") == 30, f"Chennai C1/D parse failed: {data2}"
+            assert proc._parse_wait_table(html, "Hyderabad") == {}
+        _try("state.gov wait-table structural parser (v4.4.0)", _t_state_gov_table)
+
         # ── Summary ──
         print("\n" + "-"*60)
         print(f"  Passed: {len(passed)}")
@@ -4514,7 +5019,7 @@ def main():
             print("="*60 + "\n")
             sys.exit(1)
         else:
-            print(f"\n  ✓ All checks passed — v4.3.0 is wired up correctly.")
+            print(f"\n  ✓ All checks passed — v{__version__} is wired up correctly.")
             print(f"  Next: `python visa_tracker_v3.py verify-urls` then calibrate.")
             print("="*60 + "\n")
 
@@ -4546,6 +5051,26 @@ def main():
         #   set-tier --country "Germany" --tier hot
         #   set-tier --preset immigration   # UK/Canada/DE/IE/SG → hot
         _cmd_set_tier()
+
+    elif cmd == "wait-times":
+        # v4.4.0 — live US consulate wait-time table (state.gov + CGI
+        # Federal, no auth). --all covers every us_state_dept center in
+        # the registry; default is the 5 Indian consulates.
+        _cmd_wait_times()
+
+    elif cmd == "export":
+        # v4.4.0 — dump active slots (+ checks/stats in JSON mode) to a
+        # file for spreadsheets or your own tooling.
+        _cmd_export()
+
+    elif cmd == "doctor":
+        # v4.4.0 — offline environment diagnostics: Python/deps/Chrome/
+        # registry/config/DB integrity. Complements `selftest` (code-level
+        # checks) with install-level checks.
+        _cmd_doctor()
+
+    elif cmd in ("version", "--version"):
+        print(f"visa-tracker {__version__}")
 
     else:
         print(f"Unknown command: {cmd}")
@@ -4960,6 +5485,280 @@ def _cmd_set_tier():
     print()
     print(f"Tier intervals: {cfg['tier_intervals']}")
     print(f"To start tier-aware monitoring: python visa_tracker_v3.py run --tiered")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  v4.4.0 — NEW CLI COMMANDS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def _cmd_wait_times():
+    """Fetch and display current US visa wait times per consulate.
+
+    Usage:
+        wait-times                    # 5 Indian consulates
+        wait-times --all              # every us_state_dept center in registry
+        wait-times --city "Mumbai"    # one consulate
+        wait-times --record           # also store values as DB baselines
+    """
+    args = sys.argv
+    city_filter = None
+    for i, a in enumerate(args):
+        if a == "--city" and i + 1 < len(args):
+            city_filter = args[i + 1]
+
+    if city_filter:
+        consulates = [city_filter]
+    elif "--all" in args:
+        consulates = []
+        for c in CENTERS_REGISTRY.get("centers", []):
+            if c.get("processor") == "us_state_dept" and c.get("enabled"):
+                for city in c.get("indian_cities", []):
+                    if city not in consulates:
+                        consulates.append(city)
+        if not consulates:
+            consulates = list(USStateDeptProcessor.INDIAN_CONSULATES)
+    else:
+        consulates = list(USStateDeptProcessor.INDIAN_CONSULATES)
+
+    record = "--record" in args
+    db = Database()
+    proc = USStateDeptProcessor(db)
+
+    col_codes = ["B1/B2", "F/M/J", "H/L/O/P/Q", "C1/D", "Other"]
+    print("\n" + "=" * 78)
+    print(f"  US VISA WAIT TIMES — {len(consulates)} consulate(s)  (days; live fetch)")
+    print("=" * 78)
+    print(f"  {'Consulate':<22}" + "".join(f"{c:>11}" for c in col_codes))
+    print("  " + "-" * 76)
+
+    fetched = 0
+    for consulate in consulates:
+        data = proc._fetch_wait_times(consulate)
+        if not data:
+            print(f"  {consulate:<22}{'— fetch failed / no data —':>55}")
+            continue
+        fetched += 1
+        by_code = {}
+        for label, value in data.items():
+            code = proc.VISA_TYPE_CODES.get(label, label[:10])
+            by_code[code] = value
+        row = f"  {consulate:<22}"
+        for code in col_codes:
+            v = by_code.get(code, "·")
+            row += f"{str(v):>11}"
+        print(row)
+        if record:
+            for code, value in by_code.items():
+                db.set_wait_time(f"us_waittime|{consulate}|{code}", value)
+
+    print("  " + "-" * 76)
+    print(f"  Fetched {fetched}/{len(consulates)}."
+          + ("  Baselines recorded to DB." if record and fetched else ""))
+    print("  Sources: travel.state.gov (monthly) → ais.usvisa-info.com (fallback).")
+    print("  A big DROP versus last month is the signal — see US_VISA_GUIDE.md.")
+    print("=" * 78 + "\n")
+
+
+def _cmd_export():
+    """Export tracker data. Usage:
+        export                          # JSON (slots+checks+stats) → visa_export.json
+        export --format csv             # active slots → visa_slots.csv
+        export --format json --out x.json
+    """
+    import csv as csv_mod
+    args = sys.argv
+    fmt = "json"
+    out = None
+    for i, a in enumerate(args):
+        if a == "--format" and i + 1 < len(args):
+            fmt = args[i + 1].lower()
+        if a == "--out" and i + 1 < len(args):
+            out = args[i + 1]
+
+    if fmt not in ("json", "csv"):
+        print(f"  ❌ Unknown format: {fmt}. Use json or csv.")
+        return
+
+    db = Database()
+    slots = db.get_active_slots()
+
+    if fmt == "csv":
+        out = out or "visa_slots.csv"
+        cols = ["uid", "country", "city", "visa_type", "date", "time_slot",
+                "portal", "booking_url", "found_at", "detection_method",
+                "confidence", "notified"]
+        with open(out, "w", newline="", encoding="utf-8") as f:
+            w = csv_mod.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            for s in slots:
+                w.writerow({c: s.get(c, "") for c in cols})
+        print(f"  ✓ {len(slots)} active slot(s) → {out}")
+    else:
+        out = out or "visa_export.json"
+        payload = {
+            "exported_at": utc_now_iso(),
+            "version": __version__,
+            "stats": db.stats(),
+            "slots": slots,
+            "checks": db.recent_checks(200),
+            "wait_times": db.get_all_wait_times(),
+        }
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+        print(f"  ✓ {len(slots)} slot(s), {len(payload['checks'])} check(s), "
+              f"{len(payload['wait_times'])} wait-time baseline(s) → {out}")
+
+
+def _cmd_doctor():
+    """Offline environment diagnostics. Add --network for connectivity probes."""
+    import shutil
+    import importlib
+    checks_passed = []
+    checks_failed = []
+
+    def _check(name, fn):
+        try:
+            detail = fn()
+            checks_passed.append(name)
+            print(f"  ✓ {name}" + (f"  — {detail}" if detail else ""))
+        except Exception as e:
+            checks_failed.append((name, str(e)[:160]))
+            print(f"  ✗ {name}  →  {str(e)[:160]}")
+
+    print("\n" + "=" * 72)
+    print(f"  VISA TRACKER — DOCTOR (v{__version__})")
+    print("=" * 72)
+
+    def _t_python():
+        if sys.version_info < (3, 10):
+            raise RuntimeError(f"Python 3.10+ required, found {sys.version.split()[0]}")
+        return f"Python {sys.version.split()[0]}"
+    _check("python version", _t_python)
+
+    def _t_deps():
+        found = []
+        for mod in ("requests", "bs4", "selenium", "aiohttp", "websockets",
+                    "fake_useragent", "webdriver_manager"):
+            m = importlib.import_module(mod)
+            ver = getattr(m, "__version__", "?")
+            found.append(f"{mod} {ver}")
+        return ", ".join(found[:4]) + ", …"
+    _check("required modules importable", _t_deps)
+
+    def _t_chrome():
+        env_binary = os.environ.get("VISA_CHROME_BINARY", "").strip()
+        if env_binary:
+            if os.path.exists(env_binary):
+                return f"{env_binary} (VISA_CHROME_BINARY)"
+            raise RuntimeError(f"VISA_CHROME_BINARY set but not found: {env_binary}")
+        candidates = ["google-chrome", "google-chrome-stable", "chromium",
+                      "chromium-browser", "chrome"]
+        for c in candidates:
+            path = shutil.which(c)
+            if path:
+                return path
+        win_paths = [
+            os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+        ]
+        for p in win_paths:
+            if os.path.exists(p):
+                return p
+        mac_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        if os.path.exists(mac_path):
+            return mac_path
+        raise RuntimeError("Chrome/Chromium not found on PATH or standard locations "
+                           "(Selenium layers will fail; page-change detection needs it). "
+                           "Install Chrome, or point VISA_CHROME_BINARY at a browser binary")
+    _check("chrome browser present", _t_chrome)
+
+    def _t_registry():
+        reg = load_centers_registry()
+        if not reg:
+            raise RuntimeError("centers.json missing or unparseable")
+        n = len(reg.get("centers", []))
+        enabled = sum(1 for c in reg.get("centers", []) if c.get("enabled"))
+        return f"v{reg.get('version', '?')}, {n} centers ({enabled} enabled)"
+    _check("centers.json registry", _t_registry)
+
+    def _t_config():
+        if not os.path.exists("config.json"):
+            return "no config.json yet (created on first run)"
+        with open("config.json", encoding="utf-8-sig") as f:
+            cfg = json.load(f)
+        targets = cfg.get("targets", [])
+        channels = []
+        if cfg.get("telegram", {}).get("bot_token") or os.environ.get("TELEGRAM_BOT_TOKEN"):
+            channels.append("telegram")
+        if cfg.get("email", {}).get("enabled"):
+            channels.append("email")
+        if cfg.get("discord", {}).get("webhook_url"):
+            channels.append("discord")
+        if cfg.get("webhook", {}).get("url"):
+            channels.append("webhook")
+        if cfg.get("desktop_alerts", True):
+            channels.append("desktop")
+        return f"{len(targets)} targets, channels: {', '.join(channels) or 'NONE — you will miss alerts'}"
+    _check("config.json", _t_config)
+
+    def _t_db():
+        db = Database()
+        with db._lock:
+            conn = db._conn()
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            slot_cols = {r[1] for r in conn.execute("PRAGMA table_info(slots)").fetchall()}
+            conn.close()
+        if integrity != "ok":
+            raise RuntimeError(f"integrity_check: {integrity}")
+        required = {"slots", "checks", "page_hashes", "sessions", "calibration", "wait_times"}
+        missing = required - tables
+        if missing:
+            raise RuntimeError(f"missing tables: {missing}")
+        # Column check catches a foreign/partial DB dropped in the cwd —
+        # CREATE TABLE IF NOT EXISTS won't repair a wrong-shaped table.
+        required_cols = {"uid", "country", "city", "date", "notified", "expired"}
+        missing_cols = required_cols - slot_cols
+        if missing_cols:
+            raise RuntimeError(
+                f"slots table missing columns {missing_cols} — this is not a "
+                f"visa-tracker DB; move/delete visa_slots.db and rerun"
+            )
+        return f"integrity ok, {len(tables)} tables"
+    _check("database (visa_slots.db)", _t_db)
+
+    def _t_writable():
+        probe = ".doctor_write_probe"
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.remove(probe)
+        return "cwd writable (logs, screenshots, DB)"
+    _check("filesystem writable", _t_writable)
+
+    if "--network" in sys.argv:
+        def _t_net_telegram():
+            r = requests.head("https://api.telegram.org", timeout=8)
+            return f"api.telegram.org HTTP {r.status_code}"
+        _check("network: Telegram API reachable", _t_net_telegram)
+
+        def _t_net_stategov():
+            r = requests.get(USStateDeptProcessor.STATE_GOV_URL, timeout=10,
+                             stream=True, headers={"User-Agent": rand_ua()})
+            code = r.status_code
+            r.close()
+            return f"travel.state.gov HTTP {code}"
+        _check("network: state.gov reachable", _t_net_stategov)
+
+    print("\n" + "-" * 72)
+    print(f"  Passed: {len(checks_passed)}   Failed: {len(checks_failed)}")
+    if checks_failed:
+        print("\n  Fix the items above, then re-run: python visa_tracker_v3.py doctor")
+        print("=" * 72 + "\n")
+        sys.exit(1)
+    print("  ✓ Environment looks healthy. Next: selftest → verify-urls → run")
+    print("=" * 72 + "\n")
 
 
 if __name__ == "__main__":
