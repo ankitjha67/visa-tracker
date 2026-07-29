@@ -2,6 +2,56 @@
 
 All notable changes to the Visa Slot Tracker.
 
+## [4.4.0] — 2026-07-29
+
+**US wait-time tracking repaired + hardening + new tooling.** A full-code audit found that several shipped features were silently broken. v4.4.0 fixes them, adds regression coverage for each (selftest grew 10 → 15 checks), and ships new operational tooling.
+
+### Fixed
+
+- **US wait-time persistence was 100% broken since v4.1.0** (the release that introduced it). `USStateDeptProcessor._get_previous()` / `_store_current()` referenced `slots.id`, `slots.metadata`, and `slots.expires_at` — columns that have never existed in the schema (the table's key is `uid`; there is no metadata column; expiry is an `expired` flag). Every read/write raised `sqlite3.OperationalError`, which was swallowed at debug level, so the baseline never persisted, `prev` was always `None`, and a wait-time **drop alert could never fire** across all 36 US consulate centers. Fixed with a dedicated `wait_times` table (created idempotently, used under the DB lock with WAL like every other table) that round-trips numeric day counts and status strings ("Closed") as JSON. Verified end-to-end: baseline cycle → drop cycle now produces `slots_found` with a projected-date alert.
+
+- **`server` and `run --server` crashed on startup** with `AttributeError: module 'aiohttp' has no attribute 'web'`. The Server class used `aiohttp.web.*` throughout, but only `import aiohttp` was performed — aiohttp does not expose the `web` submodule from a bare import. The dashboard backend (HTTP API + WebSocket) never worked in v3.x/v4.x. Now imported explicitly and covered by a runtime test (HTTP + WS round-trip).
+
+- **Every stored timestamp was malformed** (`2026-05-06T03:17:19+00:00Z` — `isoformat()` on an aware datetime already appends the offset; the code appended a literal `"Z"` on top). JavaScript's `new Date()` rejects that form, so the dashboard rendered **Invalid Date** and mis-sorted every slot/check from real data. New `utc_now_iso()` helper emits proper RFC3339 (`2026-07-29T16:09:32Z`); all seven call sites migrated. Old rows still compare correctly for 7-day expiry (dates dominate the lexicographic comparison).
+
+- **Telegram alerts with 8+ slots were silently lost.** A single message was built for up to 25 slots (~5,000 chars), exceeding Telegram's 4,096-char limit; the Bot API returned 400 and the code logged "Telegram sent" without checking the response. Messages are now packed into chunks under 3,500 chars, values are HTML-escaped (country/city names with `&`/`<` previously broke `parse_mode=HTML`), and every API response is verified and logged on failure.
+
+- **Only 1 of 36 US consulates was ever monitored.** `_default_targets_from_registry()` deduplicated by country name, so the 36 "United States" centers collapsed to the first one (Mumbai) and its single city. Targets now merge cities per (country, processor) — one US target carrying all consulate cities — and the hottest tier among merged centers wins.
+
+- **state.gov parsing could not parse the actual page.** The regex strategy looked for visa-type labels within 1,500 chars *after* the consulate name — but on the real layout (an HTML table with category labels in the header row and one city per body row) labels never repeat next to values, so parsing silently returned `{}` every time. v4.4.0 parses the table structurally (header-token → category mapping tolerant of state.gov's inconsistent phrasing, e.g. "Interview Required Visitors (B1/B2)") and keeps the regex as fallback. Status strings like "Closed" are preserved so a later transition to numeric alerts.
+
+- **`healthcheck.yml` daily DB stats always failed**: it queried `slots.expires_at` (nonexistent — the column is `expired`) and compared ISO-8601 `T`-separated timestamps against sqlite's space-separated `datetime('now')` strings. The ping ran for months reporting "(could not read DB: …)". Queries fixed and the Telegram response is now checked (job fails visibly instead of pretending success).
+
+- **`--break-system-packages` broke bootstrap on pip < 23.0** (the flag doesn't exist there). Plain install is tried first; the flag is only added on a PEP 668 rejection, with a clear manual-install message if both fail.
+
+- Interactive setup: "Bangalore" → "Bengaluru" (matches centers.json/VFS naming); targets now carry `processor` and `tier` like select-countries output.
+- `load_centers_registry()` clears the country index on reload (select-countries previously left stale winners in memory).
+- SIGINT now stops active trackers and cancels queued executor work, so Ctrl+C doesn't hang on the ThreadPoolExecutor's atexit join behind queued Selenium jobs.
+- Removed dead imports (`pickle`, `urljoin`, `Any`); replaced the `selenium.common.exceptions` star-import with the three exceptions actually used.
+- Page-hash preview cap raised 5,000 → 12,000 chars to match the delta window — content between 5,000–12,000 chars used to appear as "added" lines on every genuine change.
+
+### Changed
+
+- **Tiered mode now honors `instant_notify`** (v4.3.0 wired instant alerts only into the plain cycle runner; a hot-tier detection could still sit in the pending buffer until an idle window — exactly the lag instant notification was built to remove). On dispatch failure the batch path retries.
+- **VFS JWT cache is per-country.** The old single-slot cache was invalidated on every country switch, so multi-country cycles re-harvested (≈20s of Selenium) per country even with a valid token in hand. `status` now shows per-country cache ages.
+- Slots are marked `notified=1` in the DB after successful dispatch (column existed since v3.0; nothing ever set it).
+- Desktop toasts are skipped when `CI`/`GITHUB_ACTIONS` is set (Actions runners have no toast surface; it warned on every dispatch).
+- Discord/summary sends now check HTTP responses.
+
+### Added
+
+- **`wait-times` CLI** — live US consulate wait-time table from state.gov/CGI Federal (`--all` for every registry consulate, `--city X`, `--record` to store baselines).
+- **`export` CLI** — active slots to CSV, or full JSON dump (slots + checks + stats + wait-time baselines) for spreadsheets/external tooling.
+- **`doctor` CLI** — environment diagnostics: Python version, dependency versions, Chrome presence, registry/config validity, DB `integrity_check` + required tables, filesystem writability; `--network` adds connectivity probes. Exits non-zero on failure for scripting.
+- **Generic webhook channel** — `{"webhook": {"url": "...", "headers": {...}}}` POSTs a JSON payload per alert (ntfy, Slack incoming webhooks, Home Assistant, n8n, …). Included in the rate-limit summary path too.
+- **`GET /api/wait-times`** server endpoint exposing stored wait-time baselines; `/api/health` now reports the version.
+- **`version` CLI command.**
+- Selftest checks 11–15: US city merge, wait-time persistence round-trip, RFC3339 timestamp validity, Telegram chunking under the limit, state.gov table parser.
+
+### Migration from v4.3.0
+
+Drop-in. Existing `visa_slots.db` gains the `wait_times` table automatically on first open; `config.json` works unchanged (add `"webhook": {"url": ""}` only if you want the new channel). US wait-time alerts start functioning after two monitor cycles (first cycle records baselines).
+
 ## [4.3.0] — 2026-05-06
 
 **Instant notifications + log noise suppression.** Driven by analysis of the May 6 2026 production cycle (real Czech Republic detection event, 16 slots across 6 hours of continuous monitoring). v4.3.0 closes the 26-minute notification lag observed in v4.2.x and cleans up two operational issues that the cycle log surfaced.

@@ -1,4 +1,4 @@
-# Internationalization Guide (v4.3.0)
+# Internationalization Guide (v4.4.0)
 
 This repo was built for India-outbound visa tracking, but the architecture is **passport-agnostic**. The schema in `centers.json`, the URL patterns, the detection layers — none of them assume your origin country is India. They just *default* to India because that's the maintainer's use case.
 
