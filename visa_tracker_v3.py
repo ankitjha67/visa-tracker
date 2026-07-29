@@ -871,42 +871,73 @@ class BrowserManager:
         ua = rand_ua()
         proxy = self._next_proxy()
 
-        opts = Options()
-        if self.headless:
-            opts.add_argument("--headless=new")
-        opts.add_argument("--no-sandbox")
-        opts.add_argument("--disable-dev-shm-usage")
-        opts.add_argument("--disable-gpu")
-        opts.add_argument("--disable-blink-features=AutomationControlled")
-        opts.add_argument(f"--user-agent={ua}")
-        opts.add_argument("--window-size=1920,1080")
-        opts.add_argument("--disable-extensions")
-        opts.add_argument("--disable-infobars")
-        # Reduce noisy warnings/banners on real devices
-        opts.add_argument("--lang=en-US")
-        opts.add_argument("--disable-features=Translate,InterestFeedContentSuggestions")
-        opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-        opts.add_experimental_option("useAutomationExtension", False)
-
-        if proxy:
-            opts.add_argument(f"--proxy-server={proxy}")
-
-        if capture_network:
-            opts.set_capability("goog:loggingPrefs", {"performance": "ALL", "browser": "ALL"})
+        # v4.4.0: each strategy gets a FRESH Options object. Selenium Manager
+        # MUTATES the options it's given (it stamps the browser binary it
+        # resolved into options.binary_location). With a shared object,
+        # strategy 1's browser choice leaked into strategy 2, pairing
+        # webdriver-manager's chromedriver with Selenium Manager's Chrome —
+        # a guaranteed version mismatch whenever the two resolvers disagree.
+        def _build_opts() -> Options:
+            opts = Options()
+            if self.headless:
+                opts.add_argument("--headless=new")
+            opts.add_argument("--no-sandbox")
+            opts.add_argument("--disable-dev-shm-usage")
+            opts.add_argument("--disable-gpu")
+            opts.add_argument("--disable-blink-features=AutomationControlled")
+            opts.add_argument(f"--user-agent={ua}")
+            opts.add_argument("--window-size=1920,1080")
+            opts.add_argument("--disable-extensions")
+            opts.add_argument("--disable-infobars")
+            # Reduce noisy warnings/banners on real devices
+            opts.add_argument("--lang=en-US")
+            opts.add_argument("--disable-features=Translate,InterestFeedContentSuggestions")
+            opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+            opts.add_experimental_option("useAutomationExtension", False)
+            if proxy:
+                opts.add_argument(f"--proxy-server={proxy}")
+            if capture_network:
+                opts.set_capability("goog:loggingPrefs", {"performance": "ALL", "browser": "ALL"})
+            return opts
 
         driver = None
         last_err = None
+
+        # ── Strategy 0 (v4.4.0): explicit env overrides ──
+        # VISA_CHROME_BINARY / VISA_CHROMEDRIVER pin the exact browser and
+        # driver. Deterministic escape hatch for containers/CI where the
+        # auto-resolvers pick mismatched versions (e.g. a stale chromedriver
+        # on PATH next to a Playwright-managed Chromium).
+        env_binary = os.environ.get("VISA_CHROME_BINARY", "").strip()
+        env_driver = os.environ.get("VISA_CHROMEDRIVER", "").strip()
+        if env_binary or env_driver:
+            try:
+                from selenium.webdriver.chrome.service import Service as ChromeService
+                opts = _build_opts()
+                if env_binary:
+                    opts.binary_location = env_binary
+                if env_driver:
+                    driver = webdriver.Chrome(
+                        service=ChromeService(executable_path=env_driver), options=opts)
+                else:
+                    driver = webdriver.Chrome(options=opts)
+                log.debug(f"Driver: env override (binary={env_binary or 'auto'}, "
+                          f"driver={env_driver or 'auto'})")
+            except Exception as e:
+                last_err = e
+                log.warning(f"Env-override driver failed: {str(e)[:160]}")
 
         # ── Strategy 1: Selenium Manager (Selenium 4.6+) ──
         # No service= argument means Selenium auto-resolves the driver matching
         # the installed Chrome browser. This is the only strategy that works
         # reliably across Chrome auto-updates.
-        try:
-            driver = webdriver.Chrome(options=opts)
-            log.debug("Driver: Selenium Manager (auto-resolved)")
-        except Exception as e:
-            last_err = e
-            log.warning(f"Selenium Manager failed: {str(e)[:160]}")
+        if driver is None:
+            try:
+                driver = webdriver.Chrome(options=_build_opts())
+                log.debug("Driver: Selenium Manager (auto-resolved)")
+            except Exception as e:
+                last_err = e
+                log.warning(f"Selenium Manager failed: {str(e)[:160]}")
 
         # ── Strategy 2: webdriver-manager fallback ──
         if driver is None:
@@ -915,7 +946,7 @@ class BrowserManager:
                 from webdriver_manager.chrome import ChromeDriverManager
                 driver_path = ChromeDriverManager().install()
                 service = ChromeService(executable_path=driver_path)
-                driver = webdriver.Chrome(service=service, options=opts)
+                driver = webdriver.Chrome(service=service, options=_build_opts())
                 log.info(f"Driver: webdriver-manager fallback ({driver_path})")
             except Exception as e:
                 last_err = e
@@ -925,7 +956,8 @@ class BrowserManager:
             raise RuntimeError(
                 f"Could not create Chrome driver. Last error: {last_err}. "
                 f"Make sure Chrome/Chromium is installed and matches your "
-                f"selenium version (>=4.6 recommended)."
+                f"selenium version (>=4.6 recommended). In containers, pin "
+                f"VISA_CHROME_BINARY and VISA_CHROMEDRIVER env vars."
             )
 
         # Apply stealth patches
@@ -5614,6 +5646,11 @@ def _cmd_doctor():
     _check("required modules importable", _t_deps)
 
     def _t_chrome():
+        env_binary = os.environ.get("VISA_CHROME_BINARY", "").strip()
+        if env_binary:
+            if os.path.exists(env_binary):
+                return f"{env_binary} (VISA_CHROME_BINARY)"
+            raise RuntimeError(f"VISA_CHROME_BINARY set but not found: {env_binary}")
         candidates = ["google-chrome", "google-chrome-stable", "chromium",
                       "chromium-browser", "chrome"]
         for c in candidates:
@@ -5632,7 +5669,8 @@ def _cmd_doctor():
         if os.path.exists(mac_path):
             return mac_path
         raise RuntimeError("Chrome/Chromium not found on PATH or standard locations "
-                           "(Selenium layers will fail; page-change detection needs it)")
+                           "(Selenium layers will fail; page-change detection needs it). "
+                           "Install Chrome, or point VISA_CHROME_BINARY at a browser binary")
     _check("chrome browser present", _t_chrome)
 
     def _t_registry():

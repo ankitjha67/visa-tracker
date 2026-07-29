@@ -24,6 +24,8 @@ All notable changes to the Visa Slot Tracker.
 
 - **`--break-system-packages` broke bootstrap on pip < 23.0** (the flag doesn't exist there). Plain install is tried first; the flag is only added on a PEP 668 rejection, with a clear manual-install message if both fail.
 
+- **Driver-creation fallback chain could never recover from a Selenium Manager mismatch.** `create_driver()` shared one `Options` object across strategies, and Selenium Manager *mutates* the options it's given (it stamps the browser binary it resolved into `options.binary_location`). So when strategy 1 failed on a version mismatch, strategy 2 (webdriver-manager) launched *strategy 1's browser* with *its own* chromedriver — a guaranteed mismatch whenever the resolvers disagreed (observed live: chromedriver 141 paired with Selenium Manager's cached Chrome 151). Each strategy now builds fresh options. Also added **`VISA_CHROME_BINARY` / `VISA_CHROMEDRIVER` env overrides** (strategy 0) to pin exact binaries in containers/CI — honored by `doctor` too.
+
 - Interactive setup: "Bangalore" → "Bengaluru" (matches centers.json/VFS naming); targets now carry `processor` and `tier` like select-countries output.
 - `load_centers_registry()` clears the country index on reload (select-countries previously left stale winners in memory).
 - SIGINT now stops active trackers and cancels queued executor work, so Ctrl+C doesn't hang on the ThreadPoolExecutor's atexit join behind queued Selenium jobs.
